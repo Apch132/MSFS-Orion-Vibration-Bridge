@@ -1,0 +1,29 @@
+{
+  "name": "winwing-vibration-launcher",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tauri desktop launcher for WinWing MSFS Vibration Bridge preferences",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "tsx --test test/preferences.test.ts",
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.6",
+    "@fontsource/ibm-plex-sans": "^5.2.6",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-store": "^2.4.3"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vite": "^8.1.5"
+  }
+}

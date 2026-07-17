@@ -3,6 +3,14 @@ node_modules/
 
 # Build output
 dist/
+apps/launcher/dist/
+apps/launcher/app-icon.png
+
+# Tauri / Rust
+apps/launcher/src-tauri/target/
+apps/launcher/src-tauri/gen/
+apps/launcher/src-tauri/WixTools/
+*.pdb
 
 # Local agent / IDE
 .claude/

@@ -11,8 +11,14 @@
   },
   "scripts": {
     "start": "node vibration.js",
-    "test": "node test/vibration-core.test.js",
-    "build": "npx @yao-pkg/pkg . --target node22-win-x64 --output dist/WinwingVibration.exe"
+    "test": "npm run test:cli && npm run test:launcher",
+    "test:cli": "node test/vibration-core.test.js",
+    "test:launcher": "npm --prefix apps/launcher test",
+    "dev:launcher": "npm --prefix apps/launcher run tauri:dev",
+    "build": "npm run build:cli",
+    "build:cli": "npx @yao-pkg/pkg . --target node22-win-x64 --output dist/WinwingVibration.exe",
+    "build:launcher": "npm --prefix apps/launcher run tauri:build",
+    "typecheck:launcher": "npm --prefix apps/launcher run typecheck"
   },
   "pkg": {
     "targets": [

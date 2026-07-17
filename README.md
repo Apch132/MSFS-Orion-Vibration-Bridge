@@ -2,7 +2,45 @@
 
 Unofficial Windows utility that reads Microsoft Flight Simulator 2024 telemetry through SimConnect and drives the vibration motors on selected WinWing Orion 2 controllers over HID.
 
-It is a small console application: no cloud services, no configuration UI in this first public version.
+It is a Windows utility with two front ends sharing the same future vibration core:
+
+- **CLI** (`vibration.js`) — lightweight, VR-friendly, always uses built-in default feel curves
+- **Desktop launcher** (Tauri, in progress) — local preference UI, saved profiles, future telemetry and HUD
+
+## CLI vs Desktop Launcher
+
+| | CLI | Desktop launcher |
+|--|-----|------------------|
+| Role | Run the vibration bridge | Configure profiles / themes; engine link later |
+| Feel curves | Built-in defaults from the shared core | Editable Aircraft / Helicopter profiles (local only) |
+| Preferences file | None | OS app data via Tauri Store (`launcher-preferences.json`) |
+| SimConnect / HID | Active today | **Not connected yet** in the launcher UI |
+| Best for | VR, minimal footprint | Desktop tuning and future HUD |
+
+Launcher preferences live under the Windows app data directory for identifier `community.winwing.msfs2024-vibration-bridge` (managed by Tauri / the Store plugin). They are **never** read by the CLI and are not stored in the git repository.
+
+### Launcher development
+
+Requirements beyond the CLI: Rust toolchain, Windows WebView2 (usually preinstalled).
+
+```bash
+npm --prefix apps/launcher ci
+npm run dev:launcher
+```
+
+Build the launcher installer / binary:
+
+```bash
+npm run build:launcher
+```
+
+Typecheck:
+
+```bash
+npm run typecheck:launcher
+```
+
+**Current launcher status:** preferences load/validate/autosave/reset work; Configuration column is interactive; Telemetry and HUD panels are structural placeholders; Start/Stop is disabled until the vibration engine is linked.
 
 ## Project status
 
@@ -74,15 +112,17 @@ npm ci
 npm start
 ```
 
-Build a standalone executable:
+Build the CLI executable:
 
 ```bash
 npm run build
+# or explicitly:
+npm run build:cli
 ```
 
 Output: `dist/WinwingVibration.exe` (not committed to git). The packaged runtime is Node 22.
 
-Run unit tests (no simulator / no hardware required):
+Run unit tests (CLI core + launcher preferences; no simulator / no hardware required):
 
 ```bash
 npm test
@@ -102,10 +142,11 @@ If hardware is plugged in later, the bridge periodically re-scans and opens newl
 
 - Windows only
 - Only the listed USB PIDs / grip combinations are supported
-- Intensities and curves are hard-coded in this version (no external config file)
+- Intensities and curves are hard-coded in the **CLI**; the launcher stores editable profiles locally but does not drive motors yet
 - Release binaries are unsigned
 - Effect quality depends on SimVars each aircraft publishes
 - Third-party aircraft may omit or mishandle some variables
+- Desktop launcher does not yet connect SimConnect, HID, or the vibration engine
 
 Experimental HID research scripts live under `tools/hardware-research/` and are not required to run the bridge.
 
