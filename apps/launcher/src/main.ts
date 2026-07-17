@@ -30,19 +30,41 @@ async function boot(): Promise<void> {
     }
   }
 
-  await mountApp(root as HTMLElement, controller, { bridge })
+  let quitting = false
+
+  const requestQuit = async (): Promise<void> => {
+    if (quitting) return
+    quitting = true
+    try {
+      await controller.flushPendingSave()
+      await bridge.dispose()
+    } catch (err) {
+      console.error('[launcher] quit cleanup failed:', err)
+    } finally {
+      if (isTauri) {
+        try {
+          const { getCurrentWindow } = await import('@tauri-apps/api/window')
+          await getCurrentWindow().destroy()
+        } catch (err) {
+          console.error('[launcher] window destroy failed:', err)
+          quitting = false
+        }
+      }
+    }
+  }
+
+  await mountApp(root as HTMLElement, controller, {
+    bridge,
+    onRequestQuit: isTauri ? requestQuit : undefined,
+  })
 
   if (isTauri) {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     const win = getCurrentWindow()
+    // Alt+F4 / taskbar close / custom Close all go through here.
     await win.onCloseRequested(async (event) => {
       event.preventDefault()
-      try {
-        await controller.flushPendingSave()
-        await bridge.dispose()
-      } finally {
-        await win.destroy()
-      }
+      await requestQuit()
     })
   } else {
     console.info('[launcher] Browser preview uses in-memory preferences (Tauri store inactive).')

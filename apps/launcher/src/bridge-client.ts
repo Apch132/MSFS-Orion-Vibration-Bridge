@@ -162,16 +162,18 @@ export class LauncherBridgeClient {
     this.telemetryListeners.clear()
     this.flightEventListeners.clear()
     this.errorListeners.clear()
-    if (this.available) {
-      try {
-        await invoke('bridge_shutdown')
-      } catch {
-        try {
-          await invoke('bridge_stop')
-        } catch {
-          /* ignore on shutdown */
-        }
-      }
+    if (!this.available) return
+
+    // Stop vibration loop first (no-op if host already down), then kill sidecar.
+    try {
+      await invoke('bridge_stop')
+    } catch {
+      /* host may already be gone */
+    }
+    try {
+      await invoke('bridge_shutdown')
+    } catch {
+      /* ignore on shutdown */
     }
   }
 

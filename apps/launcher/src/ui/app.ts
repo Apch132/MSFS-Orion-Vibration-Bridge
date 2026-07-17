@@ -39,6 +39,8 @@ function applyTheme(theme: ThemePreference): void {
 
 export type MountAppOptions = {
   bridge?: LauncherBridgeClient | null
+  /** Tauri-only: flush prefs, stop bridge-host, destroy window. */
+  onRequestQuit?: () => void | Promise<void>
 }
 
 const PANEL_COLLAPSE_KEY = 'orion.launcher.panelsCollapsed'
@@ -79,6 +81,7 @@ export async function mountApp(
 ): Promise<void> {
   let prefs = controller.getPreferences()
   const bridge = options.bridge ?? null
+  const onRequestQuit = options.onRequestQuit
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
   let collapsed = loadCollapsed()
@@ -113,73 +116,86 @@ export async function mountApp(
     </header>
 
     <main class="layout" id="layout">
-      <section class="panel panel-config" id="panel-config" aria-label="Configuration">
-        <div class="panel-header">
-          ${iconSliders(16)}
-          <span class="label">Configuration</span>
-          <button type="button" class="btn btn-ghost panel-collapse" data-panel="config" title="Hide configuration" aria-pressed="false">
-            <span data-glyph>&lt;</span>
-          </button>
-        </div>
-        <div class="panel-body">
-          <div class="intensity-help" role="note">
-            <p>Les curseurs ne rendent pas un effet plus fréquent. Ils définissent uniquement sa puissance maximale.</p>
-            <p>Le moteur de vibration adapte automatiquement l’intensité selon la situation de vol.</p>
-            <ul>
-              <li>Train rentrant : faible vibration.</li>
-              <li>Atterrissage dur : vibration beaucoup plus forte.</li>
-              <li>Décrochage léger : vibration modérée.</li>
-              <li>Décrochage prononcé : vibration importante.</li>
-            </ul>
-            <p>Réduire un curseur limite uniquement la puissance maximale de cet effet. Le réglage Master agit sur l’ensemble des effets.</p>
-            <p class="intensity-help-scale">Échelle HID : 0 % = 0 · 50 % ≈ 128 · 100 % = 255</p>
-          </div>
-          <div class="tabs" role="tablist" aria-label="Vibration profile">
-            <button type="button" class="tab" role="tab" data-profile="aircraft" aria-selected="true">Aircraft</button>
-            <button type="button" class="tab" role="tab" data-profile="helicopter" aria-selected="false">Helicopter</button>
-          </div>
-          <div class="effect-list" id="effect-list"></div>
-          <div class="field-row">
-            <label for="theme-select">Theme</label>
-            <select id="theme-select">
-              <option value="cockpit">Cockpit</option>
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-              <option value="system">System</option>
-            </select>
-          </div>
-          <div class="field-row">
-            <span class="brand-sub">Restore both profiles and theme</span>
-            <button type="button" class="btn" id="btn-reset">Reset defaults</button>
-          </div>
-        </div>
-      </section>
+      <aside class="panel-rail" id="panel-rail" aria-label="Panel visibility">
+        <button type="button" class="panel-rail-btn" data-panel="config" title="Configuration" aria-pressed="false">
+          ${iconSliders(14)}
+          <span data-glyph>&lt;</span>
+        </button>
+        <button type="button" class="panel-rail-btn" data-panel="telemetry" title="Telemetry" aria-pressed="false">
+          ${iconActivity(14)}
+          <span data-glyph>&lt;</span>
+        </button>
+        <button type="button" class="panel-rail-btn" data-panel="hud" title="HUD" aria-pressed="false">
+          ${iconGauge(14)}
+          <span data-glyph>&lt;</span>
+        </button>
+      </aside>
 
-      <section class="panel panel-telemetry" id="panel-telemetry" aria-label="SimConnect Telemetry">
-        <div class="panel-header">
-          ${iconActivity(16)}
-          <span class="label">SimConnect Telemetry</span>
-          <button type="button" class="btn btn-ghost panel-collapse" data-panel="telemetry" title="Hide telemetry" aria-pressed="false">
-            <span data-glyph>&lt;</span>
-          </button>
-        </div>
-        <div class="panel-body panel-body-telemetry">
-          ${telemetryPanelHtml()}
-        </div>
-      </section>
+      <div class="panels-row" id="panels-row">
+        <section class="panel panel-config" id="panel-config" aria-label="Configuration">
+          <div class="panel-header">
+            ${iconSliders(16)}
+            <span class="label">Configuration</span>
+          </div>
+          <div class="panel-body">
+            <div class="intensity-help" role="note">
+              <p>Les curseurs ne rendent pas un effet plus fréquent. Ils définissent uniquement sa puissance maximale.</p>
+              <p>Le moteur de vibration adapte automatiquement l’intensité selon la situation de vol.</p>
+              <ul>
+                <li>Train rentrant : faible vibration.</li>
+                <li>Atterrissage dur : vibration beaucoup plus forte.</li>
+                <li>Décrochage léger : vibration modérée.</li>
+                <li>Décrochage prononcé : vibration importante.</li>
+              </ul>
+              <p>Réduire un curseur limite uniquement la puissance maximale de cet effet. Le réglage Master agit sur l’ensemble des effets.</p>
+              <p class="intensity-help-scale">Échelle HID : 0 % = 0 · 50 % ≈ 128 · 100 % = 255</p>
+            </div>
+            <div class="tabs" role="tablist" aria-label="Vibration profile">
+              <button type="button" class="tab" role="tab" data-profile="aircraft" aria-selected="true">Aircraft</button>
+              <button type="button" class="tab" role="tab" data-profile="helicopter" aria-selected="false">Helicopter</button>
+            </div>
+            <div class="effect-list" id="effect-list"></div>
+            <div class="field-row">
+              <label for="theme-select">Theme</label>
+              <select id="theme-select">
+                <option value="cockpit">Cockpit</option>
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+                <option value="system">System</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <span class="brand-sub">Restore both profiles and theme</span>
+              <button type="button" class="btn" id="btn-reset">Reset defaults</button>
+            </div>
+          </div>
+        </section>
 
-      <section class="panel panel-hud" id="panel-hud" aria-label="Flight HUD">
-        <div class="panel-header">
-          ${iconGauge(16)}
-          <span class="label">Flight HUD</span>
-          <button type="button" class="btn btn-ghost panel-collapse" data-panel="hud" title="Hide HUD" aria-pressed="false">
-            <span data-glyph>&lt;</span>
-          </button>
+        <section class="panel panel-telemetry" id="panel-telemetry" aria-label="SimConnect Telemetry">
+          <div class="panel-header">
+            ${iconActivity(16)}
+            <span class="label">SimConnect Telemetry</span>
+          </div>
+          <div class="panel-body panel-body-telemetry">
+            ${telemetryPanelHtml()}
+          </div>
+        </section>
+
+        <section class="panel panel-hud" id="panel-hud" aria-label="Flight HUD">
+          <div class="panel-header">
+            ${iconGauge(16)}
+            <span class="label">Flight HUD</span>
+          </div>
+          <div class="panel-body panel-body-hud">
+            ${hudHtml()}
+          </div>
+        </section>
+
+        <div class="panels-empty" id="panels-empty" hidden>
+          <p>All panels are hidden.</p>
+          <p class="brand-sub">Use the buttons on the left to show Configuration, Telemetry, or HUD.</p>
         </div>
-        <div class="panel-body panel-body-hud">
-          ${hudHtml()}
-        </div>
-      </section>
+      </div>
     </main>
 
     <footer class="statusbar">
@@ -189,6 +205,7 @@ export async function mountApp(
   `
 
   const layout = root.querySelector('#layout') as HTMLElement
+  const panelsEmpty = root.querySelector('#panels-empty') as HTMLElement
   const effectList = root.querySelector('#effect-list') as HTMLElement
   const themeSelect = root.querySelector('#theme-select') as HTMLSelectElement
   const saveStatusEl = root.querySelector('#save-status') as HTMLElement
@@ -201,7 +218,7 @@ export async function mountApp(
   const btnMax = root.querySelector('#btn-win-max') as HTMLButtonElement
   const btnClose = root.querySelector('#btn-win-close') as HTMLButtonElement
   const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.tab'))
-  const collapseBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('.panel-collapse'))
+  const collapseBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('.panel-rail-btn'))
   const tele = bindTelemetryPanel(root)
   const hud = bindHud(root)
 
@@ -226,12 +243,17 @@ export async function mountApp(
     layout.dataset.telemetryCollapsed = collapsed.telemetry ? 'true' : 'false'
     layout.dataset.hudCollapsed = collapsed.hud ? 'true' : 'false'
 
+    const allHidden = collapsed.config && collapsed.telemetry && collapsed.hud
+    layout.dataset.allCollapsed = allHidden ? 'true' : 'false'
+    panelsEmpty.hidden = !allHidden
+
     for (const btn of collapseBtns) {
       const id = btn.dataset.panel as PanelId
       const isCollapsed = collapsed[id]
       const glyph = btn.querySelector('[data-glyph]')
       if (glyph) glyph.textContent = panelToggleGlyph(isCollapsed)
       btn.setAttribute('aria-pressed', isCollapsed ? 'true' : 'false')
+      btn.classList.toggle('is-collapsed', isCollapsed)
       const labels: Record<PanelId, string> = {
         config: 'configuration',
         telemetry: 'telemetry',
@@ -571,6 +593,10 @@ export async function mountApp(
         await syncMaximizedState()
       })
       btnClose.addEventListener('click', () => {
+        if (onRequestQuit) {
+          void onRequestQuit()
+          return
+        }
         void win.close()
       })
 

@@ -15,9 +15,19 @@ use tauri::{AppHandle, Emitter, State};
 
 const PROTOCOL_VERSION: u64 = 1;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const SIDECAR_BASENAME: &str = "bridge-host";
 const TARGET_TRIPLE: &str = "x86_64-pc-windows-msvc";
+
+/// Best-effort process-tree kill (Windows). Used after graceful shutdown times out.
+fn force_kill_process_tree(pid: u32) {
+  let _ = Command::new("taskkill")
+    .args(["/PID", &pid.to_string(), "/T", "/F"])
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .status();
+}
 
 #[derive(Default)]
 pub struct BridgeHost {
@@ -376,6 +386,9 @@ pub fn shutdown_host(state: &BridgeHost) {
   drop(guard);
 
   host.expecting_exit.store(true, Ordering::SeqCst);
+  let pid = host.child.id();
+
+  // Ask the host to stop the vibration loop and exit.
   let _ = writeln!(
     host.stdin,
     "{}",
@@ -393,13 +406,15 @@ pub fn shutdown_host(state: &BridgeHost) {
         return;
       }
       Ok(None) if Instant::now() >= deadline => break,
-      Ok(None) => thread::sleep(Duration::from_millis(50)),
+      Ok(None) => thread::sleep(Duration::from_millis(40)),
       Err(_) => break,
     }
   }
 
   let _ = host.child.kill();
   let _ = host.child.wait();
+  // Ensure the whole tree is gone (pkg / HID workers, orphans).
+  force_kill_process_tree(pid);
   host.alive.store(false, Ordering::SeqCst);
 }
 
@@ -423,8 +438,14 @@ pub fn bridge_start(
 }
 
 #[tauri::command]
-pub fn bridge_stop(app: AppHandle, state: State<'_, Arc<BridgeHost>>) -> Result<(), String> {
-  ensure_host(&app, &state)?;
+pub fn bridge_stop(state: State<'_, Arc<BridgeHost>>) -> Result<(), String> {
+  // Do not spawn a new host just to stop — no-op if already down.
+  {
+    let guard = state.inner.lock().map_err(|e| e.to_string())?;
+    if guard.process.is_none() {
+      return Ok(());
+    }
+  }
   write_cmd(
     state.as_ref(),
     json!({ "cmd": "stop", "protocolVersion": PROTOCOL_VERSION }),
