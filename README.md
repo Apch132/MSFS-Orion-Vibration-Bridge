@@ -2,12 +2,38 @@
 
 Unofficial Windows utility that reads Microsoft Flight Simulator 2024 telemetry through SimConnect and drives the vibration motors on selected WinWing Orion 2 controllers over HID.
 
-![Launcher in flight with MSFS 2024 F/A-18E](docs/images/launcher-in-flight.png)
+Both front ends share the same vibration core: a **desktop launcher** (recommended for most users) and a classic **CLI**.
 
-It is a Windows utility with two front ends sharing the same vibration core:
+## Interfaces
 
-- **CLI** (`vibration.js` / `WinwingVibration.exe`) — lightweight, VR-friendly, always uses built-in default feel curves; **requires Node.js** when run from source (the packaged `.exe` is autonomous)
-- **Desktop launcher** (Tauri) — local preference UI, saved profiles, Start/Stop via an embedded `bridge-host` sidecar; **Node.js is not required** on end-user machines
+Choose the interface that fits your workflow.
+
+### Desktop Launcher
+
+The recommended interface for most users, with:
+
+- live SimConnect telemetry;
+- fighter-inspired HUD;
+- Aircraft and Helicopter vibration profiles;
+- local preferences;
+- standalone Windows runtime with no Node.js required.
+
+<p align="center">
+  <img src="docs/images/launcher-in-flight.png" alt="WinWing MSFS Vibration Bridge desktop launcher in flight" width="1200">
+</p>
+
+### Classic CLI
+
+The original lightweight console interface remains available for:
+
+- minimal resource usage;
+- VR sessions;
+- diagnostics;
+- scripting and direct console feedback.
+
+<p align="center">
+  <img src="docs/images/cli-in-flight.png" alt="WinWing MSFS Vibration Bridge classic CLI running with MSFS 2024" width="1200">
+</p>
 
 ## CLI vs Desktop Launcher
 
@@ -18,7 +44,7 @@ It is a Windows utility with two front ends sharing the same vibration core:
 | Preferences file | None | OS app data via Tauri Store (`launcher-preferences.json`) |
 | SimConnect / HID | Active via shared `createBridge()` | Same runtime via packaged `bridge-host` sidecar (UI never talks to HID/SimConnect) |
 | Runtime dependency | Node.js (source) or packaged CLI exe | None (sidecar embedded in the installer) |
-| Best for | VR, minimal footprint | Desktop tuning and future HUD |
+| Best for | VR, minimal footprint, diagnostics | Desktop tuning with live HUD and telemetry |
 
 Launcher preferences live under the Windows app data directory for identifier `community.winwing.msfs2024-vibration-bridge` (managed by Tauri / the Store plugin). They are **never** read by the CLI and are not stored in the git repository.
 
@@ -46,7 +72,7 @@ Typecheck:
 npm run typecheck:launcher
 ```
 
-**Current launcher status:** FR/EN i18n; merged Flight panel (sticky HUD + scroll); resizable config/flight splitter; panel rail collapse; stick reverse option — see [docs/TELEMETRY.md](docs/TELEMETRY.md) and [docs/INTENSITY.md](docs/INTENSITY.md).
+**Launcher highlights:** FR/EN i18n; Flight panel with sticky HUD and scrollable telemetry; resizable config/flight splitter; panel rail collapse; stick reverse option — see [docs/TELEMETRY.md](docs/TELEMETRY.md) and [docs/INTENSITY.md](docs/INTENSITY.md).
 
 ### Telemetry architecture
 
@@ -190,9 +216,13 @@ npm test
 
 ## Usage
 
+**Desktop launcher:** install the NSIS build (or run `npm run dev:launcher`), start MSFS 2024, then use **Start** in the title bar.
+
+**Classic CLI:**
+
 1. Connect the Throttle Base II and/or Joystick Base 2 with the tested grips.
 2. Launch MSFS 2024 and load a flight.
-3. Start the bridge (`npm start` or the release executable).
+3. Start the bridge (`npm start` or `WinwingVibration.exe`).
 4. Keep the console window open while flying.
 5. Press `Ctrl+C` for a clean shutdown (motors are zeroed before exit).
 
