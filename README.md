@@ -2,11 +2,10 @@
 
 Unofficial Windows utility that reads Microsoft Flight Simulator 2024 telemetry through SimConnect and drives the vibration motors on selected WinWing Orion 2 controllers over HID.
 
-Both front ends share the same vibration core: a **desktop launcher** (recommended for most users) and a classic **CLI**.
+Both interfaces share the exact same vibration core.
+Choose the interface that best fits your workflow: the Desktop Launcher for configuration and live telemetry, or the lightweight Classic CLI for VR, diagnostics and scripting.
 
 ## Interfaces
-
-Choose the interface that fits your workflow.
 
 ### Desktop Launcher
 
@@ -48,52 +47,6 @@ The original lightweight console interface remains available for:
 
 Launcher preferences live under the Windows app data directory for identifier `community.winwing.msfs2024-vibration-bridge` (managed by Tauri / the Store plugin). They are **never** read by the CLI and are not stored in the git repository.
 
-### Launcher development
-
-Requirements beyond the CLI: Rust toolchain, Windows WebView2 (usually preinstalled). The bridge host sidecar is built with `@yao-pkg/pkg` before Tauri starts.
-
-```bash
-npm --prefix apps/launcher ci
-npm run build:bridge-host
-npm run dev:launcher
-```
-
-`tauri dev` / `tauri build` also call `scripts/ensure-bridge-host.js` automatically so the sidecar exists under `apps/launcher/src-tauri/binaries/`.
-
-Build the launcher NSIS installer (embeds the sidecar):
-
-```bash
-npm run build:launcher
-```
-
-Typecheck:
-
-```bash
-npm run typecheck:launcher
-```
-
-**Launcher highlights:** FR/EN i18n; Flight panel with sticky HUD and scrollable telemetry; resizable config/flight splitter; panel rail collapse; stick reverse option — see [docs/TELEMETRY.md](docs/TELEMETRY.md) and [docs/INTENSITY.md](docs/INTENSITY.md).
-
-### Telemetry architecture
-
-```text
-MSFS → createBridge() → host stdout (≤15 Hz) → Tauri → launcher UI / HUD
-                 ↘ 50 Hz HID vibration (unchanged)
-```
-
-- Without MSFS: launcher stays usable; SimConnect shows Disconnected / Connecting; HUD stays neutral.
-- Without WinWing HID: telemetry and HUD still work; HID status is independent.
-- Sidecar crash: last values marked stale; Start again after the host respawns.
-
-Smoke-test the **packaged** sidecar (not `node lib/bridge/host.js`):
-
-```bash
-npm run build:bridge-host
-npm run smoke:bridge-host
-```
-
-Requires MSFS 2024 in a flight for a full SimConnect pass (exit code `4` if the sim is offline).
-
 ## Project status
 
 - Functional on the hardware listed below
@@ -112,6 +65,28 @@ Requires MSFS 2024 in a flight for a full SimConnect pass (exit code `4` if the 
 | Microsoft Flight Simulator 2024 | Windows |
 
 Other WinWing PIDs, grips, or bases are **not** claimed to work.
+
+## Install from a release
+
+When a GitHub Release is published, download `WinwingVibration.exe`, connect the tested hardware, start MSFS 2024, then run the executable.
+
+Windows Defender / SmartScreen may warn about an **unsigned community binary**. That is expected until a signed release exists. Prefer building from source if you want to verify the code yourself.
+
+*(No release artifact is guaranteed to exist yet—check the repository Releases page.)*
+
+## Usage
+
+**Desktop launcher:** install the NSIS build (or run `npm run dev:launcher`), start MSFS 2024, then use **Start** in the title bar.
+
+**Classic CLI:**
+
+1. Connect the Throttle Base II and/or Joystick Base 2 with the tested grips.
+2. Launch MSFS 2024 and load a flight.
+3. Start the bridge (`npm start` or `WinwingVibration.exe`).
+4. Keep the console window open while flying.
+5. Press `Ctrl+C` for a clean shutdown (motors are zeroed before exit).
+
+If hardware is plugged in later, the bridge periodically re-scans and opens newly available devices.
 
 ## How it works
 
@@ -158,14 +133,6 @@ Effects include:
 - Light APU vibration when engines are off
 
 Aircraft that do not expose a given SimVar will simply not produce that effect.
-
-## Install from a release
-
-When a GitHub Release is published, download `WinwingVibration.exe`, connect the tested hardware, start MSFS 2024, then run the executable.
-
-Windows Defender / SmartScreen may warn about an **unsigned community binary**. That is expected until a signed release exists. Prefer building from source if you want to verify the code yourself.
-
-*(No release artifact is guaranteed to exist yet—check the repository Releases page.)*
 
 ## Install from source
 
@@ -214,19 +181,65 @@ Run unit tests (CLI core + host protocol + launcher preferences; no simulator / 
 npm test
 ```
 
-## Usage
+## Launcher development
 
-**Desktop launcher:** install the NSIS build (or run `npm run dev:launcher`), start MSFS 2024, then use **Start** in the title bar.
+Requirements beyond the CLI: Rust toolchain, Windows WebView2 (usually preinstalled). The bridge host sidecar is built with `@yao-pkg/pkg` before Tauri starts.
 
-**Classic CLI:**
+```bash
+npm --prefix apps/launcher ci
+npm run build:bridge-host
+npm run dev:launcher
+```
 
-1. Connect the Throttle Base II and/or Joystick Base 2 with the tested grips.
-2. Launch MSFS 2024 and load a flight.
-3. Start the bridge (`npm start` or `WinwingVibration.exe`).
-4. Keep the console window open while flying.
-5. Press `Ctrl+C` for a clean shutdown (motors are zeroed before exit).
+`tauri dev` / `tauri build` also call `scripts/ensure-bridge-host.js` automatically so the sidecar exists under `apps/launcher/src-tauri/binaries/`.
 
-If hardware is plugged in later, the bridge periodically re-scans and opens newly available devices.
+Build the launcher NSIS installer (embeds the sidecar):
+
+```bash
+npm run build:launcher
+```
+
+Typecheck:
+
+```bash
+npm run typecheck:launcher
+```
+
+**Launcher highlights:** FR/EN i18n; Flight panel with sticky HUD and scrollable telemetry; resizable config/flight splitter; panel rail collapse; stick reverse option — see [docs/TELEMETRY.md](docs/TELEMETRY.md) and [docs/INTENSITY.md](docs/INTENSITY.md).
+
+## Telemetry architecture
+
+```text
+MSFS → createBridge() → host stdout (≤15 Hz) → Tauri → launcher UI / HUD
+                 ↘ 50 Hz HID vibration (unchanged)
+```
+
+- Without MSFS: launcher stays usable; SimConnect shows Disconnected / Connecting; HUD stays neutral.
+- Without WinWing HID: telemetry and HUD still work; HID status is independent.
+- Sidecar crash: last values marked stale; Start again after the host respawns.
+
+Smoke-test the **packaged** sidecar (not `node lib/bridge/host.js`):
+
+```bash
+npm run build:bridge-host
+npm run smoke:bridge-host
+```
+
+Requires MSFS 2024 in a flight for a full SimConnect pass (exit code `4` if the sim is offline).
+
+## Planned features
+
+The following are planned improvements only (not available yet):
+
+- Silent bridge-host startup when launched from the Desktop Launcher.
+- Optional Windows system tray support.
+- Configurable launcher close behavior:
+  - Exit application
+  - Minimize to tray
+- Tray menu:
+  - Open
+  - Start / Stop bridge
+  - Exit
 
 ## Known limitations
 
