@@ -1,6 +1,14 @@
-# WinWing MSFS2024 Vibration Bridge
+# WinWing MSFS Vibration Bridge
 
-Unofficial Windows utility that reads Microsoft Flight Simulator 2024 telemetry through SimConnect and drives the vibration motors on selected WinWing Orion 2 controllers over HID.
+Unofficial Windows utility for driving vibration motors on supported WinWing Orion 2 controllers in Microsoft Flight Simulator using SimConnect telemetry.
+
+**Compatibility**
+
+This project is developed, tested and officially supported **only with Microsoft Flight Simulator 2024**.
+
+It relies on real-time telemetry provided through **SimConnect**.
+
+Other simulators, including previous Microsoft Flight Simulator versions, are **not supported** and compatibility should not be assumed.
 
 Both interfaces share the exact same vibration core.
 Choose the interface that best fits your workflow: the Desktop Launcher for configuration and live telemetry, or the lightweight Classic CLI for VR, diagnostics and scripting.
@@ -51,6 +59,7 @@ Launcher preferences live under the Windows app data directory for identifier `c
 
 - Functional on the hardware listed below
 - First public / community release (`v0.1.0`)
+- Desktop Launcher and Classic CLI share the same vibration engine.
 - **Not affiliated with, endorsed by, or supported by WinWing or Microsoft**
 - Compatibility is limited to the devices and grips that were actually tested
 
