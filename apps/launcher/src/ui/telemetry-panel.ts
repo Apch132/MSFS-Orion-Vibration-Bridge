@@ -1,9 +1,7 @@
 import type { FlightEvent, TelemetryEngine, TelemetrySnapshot } from '../telemetry/types'
-import { FLIGHT_EVENT_LABELS } from '../telemetry/types'
 import type { SmoothControls } from '../telemetry/interpolate'
-
-/** Stick travel fill — nearly reaches box edges. */
-const STICK_TRAVEL = 0.88
+import type { MessageTree } from '../i18n'
+import { applyStickPipPosition } from './stick'
 
 function fmt(value: number, digits = 0): string {
   if (!Number.isFinite(value)) return '—'
@@ -15,30 +13,27 @@ function pct(value: number): string {
   return `${Math.round(value * 100)}%`
 }
 
-function flag(on: boolean): string {
-  return on ? 'ON' : 'off'
-}
-
-export function telemetryPanelHtml(): string {
+export function telemetryPanelHtml(messages: MessageTree): string {
+  const t = messages.flight
   return `
     <div class="telemetry-stack" id="telemetry-root" data-stale="false">
       <div class="tele-status-row">
-        <span class="tele-chip" id="tele-sim">SimConnect · Disconnected</span>
-        <span class="tele-chip" id="tele-hid">HID · Disconnected</span>
+        <span class="tele-chip" id="tele-sim">${messages.sim.disconnected}</span>
+        <span class="tele-chip" id="tele-hid">${messages.hid.disconnected}</span>
       </div>
 
       <div class="tele-card">
-        <div class="tele-card-title">Aircraft</div>
+        <div class="tele-card-title" data-i18n="flight.aircraft">${t.aircraft}</div>
         <div class="tele-grid">
-          <div><span class="tele-k">Name</span><span class="tele-v" id="tele-title">—</span></div>
-          <div><span class="tele-k">Category</span><span class="tele-v" id="tele-category">—</span></div>
-          <div><span class="tele-k">Type</span><span class="tele-v" id="tele-type">—</span></div>
-          <div><span class="tele-k">Engines</span><span class="tele-v" id="tele-engines">—</span></div>
+          <div><span class="tele-k" data-i18n="flight.name">${t.name}</span><span class="tele-v" id="tele-title">—</span></div>
+          <div><span class="tele-k" data-i18n="flight.category">${t.category}</span><span class="tele-v" id="tele-category">—</span></div>
+          <div><span class="tele-k" data-i18n="flight.type">${t.type}</span><span class="tele-v" id="tele-type">—</span></div>
+          <div><span class="tele-k" data-i18n="flight.engines">${t.engines}</span><span class="tele-v" id="tele-engines">—</span></div>
         </div>
       </div>
 
       <div class="tele-card">
-        <div class="tele-card-title">Flight Data</div>
+        <div class="tele-card-title" data-i18n="flight.flightData">${t.flightData}</div>
         <div class="tele-grid tele-grid-dense">
           <div><span class="tele-k">IAS</span><span class="tele-v" id="tele-ias">—</span></div>
           <div><span class="tele-k">GS</span><span class="tele-v" id="tele-gs">—</span></div>
@@ -52,9 +47,9 @@ export function telemetryPanelHtml(): string {
       </div>
 
       <div class="tele-card">
-        <div class="tele-card-title">Aircraft State</div>
+        <div class="tele-card-title" data-i18n="flight.aircraftState">${t.aircraftState}</div>
         <div class="tele-grid tele-grid-dense">
-          <div><span class="tele-k">Phase</span><span class="tele-v" id="tele-phase">—</span></div>
+          <div><span class="tele-k" data-i18n="flight.phase">${t.phase}</span><span class="tele-v" id="tele-phase">—</span></div>
           <div><span class="tele-k">Gear</span><span class="tele-v" id="tele-gear">—</span></div>
           <div><span class="tele-k">Flaps</span><span class="tele-v" id="tele-flaps">—</span></div>
           <div><span class="tele-k">Spoilers</span><span class="tele-v" id="tele-spoilers">—</span></div>
@@ -65,7 +60,7 @@ export function telemetryPanelHtml(): string {
       </div>
 
       <div class="tele-card">
-        <div class="tele-card-title">Controls</div>
+        <div class="tele-card-title" data-i18n="flight.controls">${t.controls}</div>
         <div class="controls-viz" id="controls-viz" aria-hidden="true">
           <div class="stick-box">
             <div class="stick-cross"></div>
@@ -87,15 +82,20 @@ export function telemetryPanelHtml(): string {
             </div>
           </div>
         </div>
+        <label class="stick-reverse">
+          <input type="checkbox" id="reverse-stick-y" />
+          <span data-i18n="flight.reverseStick">${t.reverseStick}</span>
+        </label>
+        <p class="wind-convention brand-sub" data-i18n="flight.windConvention">${t.windConvention}</p>
       </div>
 
       <div class="tele-card">
-        <div class="tele-card-title">Engines</div>
+        <div class="tele-card-title" data-i18n="flight.enginesCard">${t.enginesCard}</div>
         <div class="engine-gauges" id="engine-gauges"></div>
       </div>
 
       <div class="tele-card">
-        <div class="tele-card-title">Flight Events</div>
+        <div class="tele-card-title" data-i18n="flight.events">${t.events}</div>
         <ol class="event-timeline" id="event-timeline"></ol>
       </div>
     </div>
@@ -133,6 +133,7 @@ export type TelemetryPanelRefs = {
   rudderPip: HTMLElement
   brakeL: HTMLElement
   brakeR: HTMLElement
+  reverseStick: HTMLInputElement
   engineGauges: HTMLElement
   timeline: HTMLOListElement
 }
@@ -169,15 +170,16 @@ export function bindTelemetryPanel(root: ParentNode): TelemetryPanelRefs {
     rudderPip: root.querySelector('#rudder-pip') as HTMLElement,
     brakeL: root.querySelector('#brake-l') as HTMLElement,
     brakeR: root.querySelector('#brake-r') as HTMLElement,
+    reverseStick: root.querySelector('#reverse-stick-y') as HTMLInputElement,
     engineGauges: root.querySelector('#engine-gauges') as HTMLElement,
     timeline: root.querySelector('#event-timeline') as HTMLOListElement,
   }
 }
 
-function enginePrimary(eng: TelemetryEngine): string {
+function enginePrimary(eng: TelemetryEngine, messages: MessageTree): string {
   if (eng.n1Percent > 0.5) return `${fmt(eng.n1Percent, 0)}% N1`
   if (eng.rpmPercent > 0.5) return `${fmt(eng.rpmPercent, 0)}% RPM`
-  return eng.combustion ? 'IDLE' : 'OFF'
+  return eng.combustion ? messages.flight.idle : messages.flight.off
 }
 
 function renderEngineGauges(
@@ -185,9 +187,10 @@ function renderEngineGauges(
   engines: TelemetryEngine[],
   engineCount: number,
   connected: boolean,
+  messages: MessageTree,
 ): void {
   if (!connected || engineCount <= 0) {
-    el.innerHTML = '<div class="engine-na">—</div>'
+    el.innerHTML = `<div class="engine-na">—</div>`
     return
   }
 
@@ -198,8 +201,8 @@ function renderEngineGauges(
     if (!eng) {
       parts.push(`
         <div class="engine-gauge" data-na="true">
-          <span class="tele-k">Eng ${i + 1}</span>
-          <strong>N/A</strong>
+          <span class="tele-k">${messages.flight.eng} ${i + 1}</span>
+          <strong>${messages.flight.na}</strong>
         </div>
       `)
       continue
@@ -207,19 +210,18 @@ function renderEngineGauges(
     const level = Math.min(100, Math.max(0, eng.n1Percent > 0.5 ? eng.n1Percent : eng.rpmPercent))
     parts.push(`
       <div class="engine-gauge" data-running="${eng.running ? 'true' : 'false'}">
-        <span class="tele-k">Eng ${eng.index}</span>
+        <span class="tele-k">${messages.flight.eng} ${eng.index}</span>
         <div class="engine-bar"><div style="width:${level}%"></div></div>
-        <strong>${enginePrimary(eng)}</strong>
+        <strong>${enginePrimary(eng, messages)}</strong>
       </div>
     `)
   }
 
-  // Twin UI slot when only one engine: show N/A for engine 2 (never a false running state).
   if (engineCount === 1) {
     parts.push(`
       <div class="engine-gauge" data-na="true">
-        <span class="tele-k">Eng 2</span>
-        <strong>N/A</strong>
+        <span class="tele-k">${messages.flight.eng} 2</span>
+        <strong>${messages.flight.na}</strong>
       </div>
     `)
   }
@@ -227,30 +229,37 @@ function renderEngineGauges(
   el.innerHTML = parts.join('')
 }
 
-export function renderTelemetryCards(refs: TelemetryPanelRefs, snap: TelemetrySnapshot): void {
+export function renderTelemetryCards(
+  refs: TelemetryPanelRefs,
+  snap: TelemetrySnapshot,
+  messages: MessageTree,
+): void {
   refs.root.dataset.stale = snap.stale ? 'true' : 'false'
 
-  const simLabel = {
-    disconnected: 'Disconnected',
-    connecting: 'Connecting',
-    connected: 'Connected',
-    error: 'Error',
-  }[snap.connection.simconnect]
-  refs.sim.textContent = `SimConnect · ${simLabel}`
+  const simMap = {
+    disconnected: messages.sim.disconnected,
+    connecting: messages.sim.connecting,
+    connected: messages.sim.connected,
+    error: messages.sim.error,
+  } as const
+  refs.sim.textContent = simMap[snap.connection.simconnect]
   refs.sim.dataset.state = snap.connection.simconnect
 
-  refs.hid.textContent = `HID · ${
-    snap.connection.hid === 'connected' ? 'Connected' : snap.connection.hid === 'error' ? 'Error' : 'Disconnected'
-  }`
+  const hidMap = {
+    disconnected: messages.hid.disconnected,
+    connected: messages.hid.connected,
+    error: messages.hid.error,
+  } as const
+  refs.hid.textContent = hidMap[snap.connection.hid] ?? messages.hid.disconnected
   refs.hid.dataset.state = snap.connection.hid
 
   const connected = snap.connection.simconnect === 'connected' && !snap.stale
   refs.title.textContent = connected && snap.aircraft.title ? snap.aircraft.title : '—'
   refs.category.textContent = connected
-    ? (snap.aircraft.category || (snap.aircraft.isHelicopter ? 'Helicopter' : 'Airplane') || '—')
+    ? (snap.aircraft.category || (snap.aircraft.isHelicopter ? messages.flight.helicopter : messages.flight.airplane) || '—')
     : '—'
   refs.type.textContent = connected
-    ? (snap.aircraft.isHelicopter ? 'Helicopter' : (snap.aircraft.type || 'Airplane'))
+    ? (snap.aircraft.isHelicopter ? messages.flight.helicopter : (snap.aircraft.type || messages.flight.airplane))
     : '—'
   refs.engines.textContent = connected && snap.aircraft.engineCount
     ? String(snap.aircraft.engineCount)
@@ -268,41 +277,42 @@ export function renderTelemetryCards(refs: TelemetryPanelRefs, snap: TelemetrySn
     : '—'
 
   refs.phase.textContent = connected
-    ? (snap.aircraftState.onGround ? 'On ground' : 'Airborne')
+    ? (snap.aircraftState.onGround ? messages.flight.onGround : messages.flight.airborne)
     : '—'
   refs.gear.textContent = connected ? pct(snap.aircraftState.gearPosition) : '—'
   refs.flaps.textContent = connected ? pct(snap.aircraftState.flapsPosition) : '—'
   refs.spoilers.textContent = connected ? pct(snap.aircraftState.spoilersPosition) : '—'
-  refs.stall.textContent = connected ? flag(snap.aircraftState.stallWarning) : '—'
-  refs.overspeed.textContent = connected ? flag(snap.aircraftState.overspeedWarning) : '—'
-  refs.ab.textContent = connected ? flag(snap.aircraftState.afterburnerActive) : '—'
+  refs.stall.textContent = connected
+    ? (snap.aircraftState.stallWarning ? messages.flight.on : messages.flight.off)
+    : '—'
+  refs.overspeed.textContent = connected
+    ? (snap.aircraftState.overspeedWarning ? messages.flight.on : messages.flight.off)
+    : '—'
+  refs.ab.textContent = connected
+    ? (snap.aircraftState.afterburnerActive ? messages.flight.on : messages.flight.off)
+    : '—'
 
   const engineCount = connected ? snap.aircraft.engineCount : 0
   const twin = engineCount >= 2
   refs.thrColR.hidden = connected && !twin
   refs.thrColR.dataset.na = connected && !twin ? 'true' : 'false'
   if (connected && !twin) {
-    refs.thrLabelR.textContent = 'N/A'
+    refs.thrLabelR.textContent = messages.flight.na
     refs.thrR.style.height = '0%'
   } else {
     refs.thrLabelR.textContent = '2'
   }
 
-  renderEngineGauges(refs.engineGauges, snap.engines, engineCount, connected)
+  renderEngineGauges(refs.engineGauges, snap.engines, engineCount, connected, messages)
 }
 
-/**
- * Stick Y: positive elevator (aft) moves the pip down — matches MSFS POSITION.
- * Travel scaled so full deflection nearly fills the box.
- */
 export function renderControls(
   refs: TelemetryPanelRefs,
   controls: SmoothControls,
   engineCount = 2,
+  reverseStickY = false,
 ): void {
-  const x = Math.min(1, Math.max(-1, controls.stickX))
-  const y = Math.min(1, Math.max(-1, controls.stickY))
-  refs.stickPip.style.transform = `translate(${x * STICK_TRAVEL * 100}%, ${y * STICK_TRAVEL * 100}%)`
+  applyStickPipPosition(refs.stickPip, controls, { reverseStickY })
 
   const l = Math.min(1, Math.max(0, controls.leftThrottle))
   refs.thrL.style.height = `${l * 100}%`
@@ -316,7 +326,6 @@ export function renderControls(
     refs.thrR.style.height = '0%'
     refs.thrColR.hidden = false
     refs.thrColR.dataset.na = 'true'
-    refs.thrLabelR.textContent = 'N/A'
   }
 
   const rudder = Math.min(1, Math.max(-1, controls.rudder))
@@ -332,12 +341,14 @@ export function appendFlightEvent(
   timeline: HTMLOListElement,
   event: FlightEvent,
   sessionId: number,
+  messages: MessageTree,
 ): void {
   const li = document.createElement('li')
   li.dataset.session = String(sessionId)
   const time = new Date(event.timestamp)
   const stamp = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  li.innerHTML = `<span class="event-time">${stamp}</span><span class="event-kind">${FLIGHT_EVENT_LABELS[event.kind]}</span>`
+  const label = messages.events[event.kind] ?? event.kind
+  li.innerHTML = `<span class="event-time">${stamp}</span><span class="event-kind">${label}</span>`
   timeline.insertBefore(li, timeline.firstChild)
   while (timeline.children.length > MAX_EVENTS) {
     timeline.removeChild(timeline.lastChild as Node)

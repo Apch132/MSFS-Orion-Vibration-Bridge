@@ -1,3 +1,4 @@
+import { detectSystemLocale } from '../i18n'
 import type { EffectSettings, LauncherPreferences, VibrationProfile } from './types'
 import { CURRENT_SCHEMA_VERSION } from './types'
 
@@ -48,6 +49,8 @@ export function getDefaultPreferences(): LauncherPreferences {
     },
     appearance: {
       theme: 'cockpit',
+      locale: detectSystemLocale(),
+      reverseStickY: false,
     },
   }
 }

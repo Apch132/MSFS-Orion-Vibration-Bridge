@@ -11,10 +11,24 @@ MSFS SimConnect
        → host.js stdout  { type: "telemetry" | "event" }
             → bridge_host.rs  (cache + Tauri emit)
                  → bridge-client.ts
-                      → Telemetry cards / Controls / HUD
+                      → Flight panel (sticky HUD + scrollable detail)
 ```
 
 The vibration motor loop stays at 50 Hz and is not paced by UI telemetry.
+
+## Stick axes
+
+| SimVar | Unit | Range | UI |
+|--------|------|-------|-----|
+| AILERON POSITION | position | −1…+1 | stick X |
+| ELEVATOR POSITION | position | −1…+1 | stick Y |
+
+**Elevator convention (default UI):** push (negative) → pip **up**; pull (positive) → pip **down**.  
+Optional preference `appearance.reverseStickY` inverts **display only**. Pip uses `left`/`top` % of the stick box.
+
+## Wind (HUD)
+
+`AMBIENT WIND DIRECTION` / `AMBIENT WIND VELOCITY`. Meteorological **FROM** convention: label = direction wind comes from; arrow tip points **to** (FROM+180°).
 
 ## Frequency
 

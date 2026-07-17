@@ -113,7 +113,7 @@ describe('launcher preferences', () => {
     await controller.loadPreferences()
     controller.updatePreferences((current) => ({
       ...current,
-      appearance: { theme: 'light' },
+      appearance: { ...current.appearance, theme: 'light' },
       profiles: {
         ...current.profiles,
         aircraft: {

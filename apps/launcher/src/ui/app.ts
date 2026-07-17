@@ -2,13 +2,14 @@ import type { LauncherBridgeClient, BridgeRuntimeState } from '../bridge-client'
 import { PreferencesController } from '../preferences'
 import {
   EFFECT_KEYS,
-  EFFECT_LABELS,
   type ActiveProfile,
   type EffectKey,
   type LauncherPreferences,
+  type LocaleCode,
   type SaveStatus,
   type ThemePreference,
 } from '../preferences/types'
+import { formatMessage, getMessages, type MessageTree } from '../i18n'
 import {
   createSmoothControls,
   createSmoothFlight,
@@ -39,13 +40,12 @@ function applyTheme(theme: ThemePreference): void {
 
 export type MountAppOptions = {
   bridge?: LauncherBridgeClient | null
-  /** Tauri-only: flush prefs, stop bridge-host, destroy window. */
   onRequestQuit?: () => void | Promise<void>
 }
 
 const PANEL_COLLAPSE_KEY = 'orion.launcher.panelsCollapsed'
 
-type PanelId = 'config' | 'telemetry' | 'hud'
+type PanelId = 'config' | 'flight'
 
 type CollapsedPanels = Record<PanelId, boolean>
 
@@ -53,25 +53,31 @@ function loadCollapsed(): CollapsedPanels {
   try {
     const raw = localStorage.getItem(PANEL_COLLAPSE_KEY)
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<CollapsedPanels>
+      const parsed = JSON.parse(raw) as Partial<CollapsedPanels & { telemetry?: boolean; hud?: boolean }>
+      // Migrate legacy 3-panel keys → merged flight panel
+      const flight = Boolean(parsed.flight ?? (parsed.telemetry && parsed.hud))
       return {
         config: Boolean(parsed.config),
-        telemetry: Boolean(parsed.telemetry),
-        hud: Boolean(parsed.hud),
+        flight,
       }
     }
-    // Migrate legacy single-panel key
     if (localStorage.getItem('orion.launcher.configCollapsed') === '1') {
-      return { config: true, telemetry: false, hud: false }
+      return { config: true, flight: false }
     }
   } catch {
     /* ignore */
   }
-  return { config: false, telemetry: false, hud: false }
+  return { config: false, flight: false }
 }
 
 function panelToggleGlyph(collapsed: boolean): string {
   return collapsed ? '>' : '<'
+}
+
+function saveStatusLabel(status: SaveStatus, messages: MessageTree): string {
+  if (status === 'Saving…') return messages.save.saving
+  if (status === 'Error') return messages.save.error
+  return messages.save.saved
 }
 
 export async function mountApp(
@@ -87,140 +93,144 @@ export async function mountApp(
   let collapsed = loadCollapsed()
   let sliderPointerDown = false
   let engineCount = 0
+  let messages = getMessages(prefs.appearance.locale)
 
-  root.innerHTML = `
-    <header class="titlebar" data-tauri-drag-region>
-      <div class="titlebar-brand" data-tauri-drag-region>
-        <div class="brand-mark" aria-hidden="true"></div>
-        <div class="titlebar-titles" data-tauri-drag-region>
-          <div class="titlebar-name">WinWing MSFS Vibration Bridge</div>
-          <div class="brand-sub">Desktop launcher</div>
+  function buildShell(): void {
+    root.innerHTML = `
+      <header class="titlebar" data-tauri-drag-region>
+        <div class="titlebar-brand" data-tauri-drag-region>
+          <div class="brand-mark" aria-hidden="true"></div>
+          <div class="titlebar-titles" data-tauri-drag-region>
+            <div class="titlebar-name">${messages.app.title}</div>
+            <div class="brand-sub">${messages.app.subtitle}</div>
+          </div>
         </div>
-      </div>
-      <div class="titlebar-drag" data-tauri-drag-region title="Drag to move · double-click to maximize"></div>
-      <div class="titlebar-center">
-        <div class="sim-pill" id="sim-pill" data-state="offline" title="SimConnect status from the shared bridge runtime">
-          ${iconRadio(14)}
-          <span class="sim-dot" aria-hidden="true"></span>
-          <span id="sim-label">SimConnect · Disconnected</span>
+        <div class="titlebar-drag" data-tauri-drag-region title="${messages.app.dragHint}"></div>
+        <div class="titlebar-center">
+          <div class="sim-pill" id="sim-pill" data-state="offline" title="${messages.sim.title}">
+            ${iconRadio(14)}
+            <span class="sim-dot" aria-hidden="true"></span>
+            <span id="sim-label">${messages.sim.disconnected}</span>
+          </div>
+          <button type="button" class="btn btn-primary" id="btn-engine" ${bridge?.isAvailable() ? '' : 'disabled'} title="${bridge?.isAvailable() ? messages.bridge.startTitle : messages.bridge.unavailableTitle}">
+            ${messages.bridge.start}
+          </button>
         </div>
-        <button type="button" class="btn btn-primary" id="btn-engine" ${bridge?.isAvailable() ? '' : 'disabled'} title="${bridge?.isAvailable() ? 'Start or stop the shared vibration bridge' : 'Bridge runtime requires the Tauri desktop app'}">
-          Start
-        </button>
-      </div>
-      <div class="window-controls" role="group" aria-label="Window">
-        <button type="button" class="win-btn" id="btn-win-min" title="Minimize" aria-label="Minimize">${iconMinimize()}</button>
-        <button type="button" class="win-btn" id="btn-win-max" title="Maximize" aria-label="Maximize">${iconMaximize()}</button>
-        <button type="button" class="win-btn win-btn-close" id="btn-win-close" title="Close" aria-label="Close">${iconClose()}</button>
-      </div>
-    </header>
-
-    <main class="layout" id="layout">
-      <aside class="panel-rail" id="panel-rail" aria-label="Panel visibility">
-        <button type="button" class="panel-rail-btn" data-panel="config" title="Configuration" aria-pressed="false">
-          ${iconSliders(14)}
-          <span data-glyph>&lt;</span>
-        </button>
-        <button type="button" class="panel-rail-btn" data-panel="telemetry" title="Telemetry" aria-pressed="false">
-          ${iconActivity(14)}
-          <span data-glyph>&lt;</span>
-        </button>
-        <button type="button" class="panel-rail-btn" data-panel="hud" title="HUD" aria-pressed="false">
-          ${iconGauge(14)}
-          <span data-glyph>&lt;</span>
-        </button>
-      </aside>
-
-      <div class="panels-row" id="panels-row">
-        <section class="panel panel-config" id="panel-config" aria-label="Configuration">
-          <div class="panel-header">
-            ${iconSliders(16)}
-            <span class="label">Configuration</span>
-          </div>
-          <div class="panel-body">
-            <div class="intensity-help" role="note">
-              <p>Les curseurs ne rendent pas un effet plus fréquent. Ils définissent uniquement sa puissance maximale.</p>
-              <p>Le moteur de vibration adapte automatiquement l’intensité selon la situation de vol.</p>
-              <ul>
-                <li>Train rentrant : faible vibration.</li>
-                <li>Atterrissage dur : vibration beaucoup plus forte.</li>
-                <li>Décrochage léger : vibration modérée.</li>
-                <li>Décrochage prononcé : vibration importante.</li>
-              </ul>
-              <p>Réduire un curseur limite uniquement la puissance maximale de cet effet. Le réglage Master agit sur l’ensemble des effets.</p>
-              <p class="intensity-help-scale">Échelle HID : 0 % = 0 · 50 % ≈ 128 · 100 % = 255</p>
-            </div>
-            <div class="tabs" role="tablist" aria-label="Vibration profile">
-              <button type="button" class="tab" role="tab" data-profile="aircraft" aria-selected="true">Aircraft</button>
-              <button type="button" class="tab" role="tab" data-profile="helicopter" aria-selected="false">Helicopter</button>
-            </div>
-            <div class="effect-list" id="effect-list"></div>
-            <div class="field-row">
-              <label for="theme-select">Theme</label>
-              <select id="theme-select">
-                <option value="cockpit">Cockpit</option>
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-                <option value="system">System</option>
-              </select>
-            </div>
-            <div class="field-row">
-              <span class="brand-sub">Restore both profiles and theme</span>
-              <button type="button" class="btn" id="btn-reset">Reset defaults</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel panel-telemetry" id="panel-telemetry" aria-label="SimConnect Telemetry">
-          <div class="panel-header">
-            ${iconActivity(16)}
-            <span class="label">SimConnect Telemetry</span>
-          </div>
-          <div class="panel-body panel-body-telemetry">
-            ${telemetryPanelHtml()}
-          </div>
-        </section>
-
-        <section class="panel panel-hud" id="panel-hud" aria-label="Flight HUD">
-          <div class="panel-header">
-            ${iconGauge(16)}
-            <span class="label">Flight HUD</span>
-          </div>
-          <div class="panel-body panel-body-hud">
-            ${hudHtml()}
-          </div>
-        </section>
-
-        <div class="panels-empty" id="panels-empty" hidden>
-          <p>All panels are hidden.</p>
-          <p class="brand-sub">Use the buttons on the left to show Configuration, Telemetry, or HUD.</p>
+        <div class="window-controls" role="group" aria-label="Window">
+          <button type="button" class="win-btn" id="btn-win-min" title="${messages.window.minimize}" aria-label="${messages.window.minimize}">${iconMinimize()}</button>
+          <button type="button" class="win-btn" id="btn-win-max" title="${messages.window.maximize}" aria-label="${messages.window.maximize}">${iconMaximize()}</button>
+          <button type="button" class="win-btn win-btn-close" id="btn-win-close" title="${messages.window.close}" aria-label="${messages.window.close}">${iconClose()}</button>
         </div>
-      </div>
-    </main>
+      </header>
 
-    <footer class="statusbar">
-      <span class="save-status" id="save-status" data-status="Saved">Saved</span>
-      <span class="brand-sub" id="bridge-footer">Preferences stored in the OS app data directory</span>
-    </footer>
-  `
+      <main class="layout" id="layout">
+        <aside class="panel-rail" id="panel-rail" aria-label="${messages.panels.railLabel}">
+          <button type="button" class="panel-rail-btn" data-panel="config" title="${messages.panels.config}" aria-pressed="false">
+            ${iconSliders(14)}
+            <span data-glyph>&lt;</span>
+          </button>
+          <button type="button" class="panel-rail-btn" data-panel="flight" title="${messages.panels.flight}" aria-pressed="false">
+            ${iconGauge(14)}
+            <span data-glyph>&lt;</span>
+          </button>
+        </aside>
+
+        <div class="panels-row" id="panels-row">
+          <section class="panel panel-config" id="panel-config" aria-label="${messages.panels.config}">
+            <div class="panel-header">
+              ${iconSliders(16)}
+              <span class="label">${messages.panels.config}</span>
+            </div>
+            <div class="panel-body">
+              <div class="intensity-help" role="note">
+                <p>${messages.config.helpLead}</p>
+                <p>${messages.config.helpBody}</p>
+                <ul>
+                  <li>${messages.config.helpGear}</li>
+                  <li>${messages.config.helpTouchdown}</li>
+                  <li>${messages.config.helpStallLight}</li>
+                  <li>${messages.config.helpStallHard}</li>
+                </ul>
+                <p>${messages.config.helpCeiling}</p>
+                <p class="intensity-help-scale">${messages.config.helpScale}</p>
+              </div>
+              <div class="tabs" role="tablist" aria-label="Vibration profile">
+                <button type="button" class="tab" role="tab" data-profile="aircraft" aria-selected="true">${messages.config.profileAircraft}</button>
+                <button type="button" class="tab" role="tab" data-profile="helicopter" aria-selected="false">${messages.config.profileHelicopter}</button>
+              </div>
+              <div class="effect-list" id="effect-list"></div>
+              <div class="field-row">
+                <label for="theme-select">${messages.config.theme}</label>
+                <select id="theme-select">
+                  <option value="cockpit">${messages.config.themeCockpit}</option>
+                  <option value="dark">${messages.config.themeDark}</option>
+                  <option value="light">${messages.config.themeLight}</option>
+                  <option value="system">${messages.config.themeSystem}</option>
+                </select>
+              </div>
+              <div class="field-row">
+                <label for="locale-select">${messages.config.language}</label>
+                <select id="locale-select">
+                  <option value="en">${messages.config.languageEn}</option>
+                  <option value="fr">${messages.config.languageFr}</option>
+                </select>
+              </div>
+              <div class="field-row">
+                <span class="brand-sub">${messages.config.resetHint}</span>
+                <button type="button" class="btn" id="btn-reset">${messages.config.reset}</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel panel-flight" id="panel-flight" aria-label="${messages.panels.flight}">
+            <div class="panel-header">
+              ${iconActivity(16)}
+              <span class="label">${messages.panels.flight}</span>
+            </div>
+            <div class="panel-body panel-body-flight">
+              <div class="flight-hud-sticky">
+                ${hudHtml(messages.hud.aria)}
+              </div>
+              <div class="flight-tele-scroll">
+                ${telemetryPanelHtml(messages)}
+              </div>
+            </div>
+          </section>
+
+          <div class="panels-empty" id="panels-empty" hidden>
+            <p>${messages.panels.allHiddenTitle}</p>
+            <p class="brand-sub">${messages.panels.allHiddenHint}</p>
+          </div>
+        </div>
+      </main>
+
+      <footer class="statusbar">
+        <span class="save-status" id="save-status" data-status="Saved">${messages.save.saved}</span>
+        <span class="brand-sub" id="bridge-footer">${messages.bridge.idleFooter}</span>
+      </footer>
+    `
+  }
+
+  buildShell()
 
   const layout = root.querySelector('#layout') as HTMLElement
   const panelsEmpty = root.querySelector('#panels-empty') as HTMLElement
-  const effectList = root.querySelector('#effect-list') as HTMLElement
-  const themeSelect = root.querySelector('#theme-select') as HTMLSelectElement
-  const saveStatusEl = root.querySelector('#save-status') as HTMLElement
-  const resetBtn = root.querySelector('#btn-reset') as HTMLButtonElement
-  const engineBtn = root.querySelector('#btn-engine') as HTMLButtonElement
-  const simPill = root.querySelector('#sim-pill') as HTMLElement
-  const simLabel = root.querySelector('#sim-label') as HTMLElement
-  const bridgeFooter = root.querySelector('#bridge-footer') as HTMLElement
-  const btnMin = root.querySelector('#btn-win-min') as HTMLButtonElement
-  const btnMax = root.querySelector('#btn-win-max') as HTMLButtonElement
-  const btnClose = root.querySelector('#btn-win-close') as HTMLButtonElement
-  const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.tab'))
-  const collapseBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('.panel-rail-btn'))
-  const tele = bindTelemetryPanel(root)
-  const hud = bindHud(root)
+  let effectList = root.querySelector('#effect-list') as HTMLElement
+  let themeSelect = root.querySelector('#theme-select') as HTMLSelectElement
+  let localeSelect = root.querySelector('#locale-select') as HTMLSelectElement
+  let saveStatusEl = root.querySelector('#save-status') as HTMLElement
+  let resetBtn = root.querySelector('#btn-reset') as HTMLButtonElement
+  let engineBtn = root.querySelector('#btn-engine') as HTMLButtonElement
+  let simPill = root.querySelector('#sim-pill') as HTMLElement
+  let simLabel = root.querySelector('#sim-label') as HTMLElement
+  let bridgeFooter = root.querySelector('#bridge-footer') as HTMLElement
+  let btnMin = root.querySelector('#btn-win-min') as HTMLButtonElement
+  let btnMax = root.querySelector('#btn-win-max') as HTMLButtonElement
+  let btnClose = root.querySelector('#btn-win-close') as HTMLButtonElement
+  let tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.tab'))
+  let collapseBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('.panel-rail-btn'))
+  let tele = bindTelemetryPanel(root)
+  let hud = bindHud(root)
 
   let targetTelemetry: TelemetrySnapshot | null = bridge?.getTelemetry() ?? null
   let smoothControls = createSmoothControls()
@@ -229,6 +239,7 @@ export async function mountApp(
   let lastAircraftKey = ''
   let raf = 0
   let maximized = false
+  let lastSaveStatus: SaveStatus = controller.getSaveStatus()
 
   function persistCollapsed(): void {
     try {
@@ -240,10 +251,9 @@ export async function mountApp(
 
   function syncPanelCollapse(): void {
     layout.dataset.configCollapsed = collapsed.config ? 'true' : 'false'
-    layout.dataset.telemetryCollapsed = collapsed.telemetry ? 'true' : 'false'
-    layout.dataset.hudCollapsed = collapsed.hud ? 'true' : 'false'
+    layout.dataset.flightCollapsed = collapsed.flight ? 'true' : 'false'
 
-    const allHidden = collapsed.config && collapsed.telemetry && collapsed.hud
+    const allHidden = collapsed.config && collapsed.flight
     layout.dataset.allCollapsed = allHidden ? 'true' : 'false'
     panelsEmpty.hidden = !allHidden
 
@@ -254,33 +264,30 @@ export async function mountApp(
       if (glyph) glyph.textContent = panelToggleGlyph(isCollapsed)
       btn.setAttribute('aria-pressed', isCollapsed ? 'true' : 'false')
       btn.classList.toggle('is-collapsed', isCollapsed)
-      const labels: Record<PanelId, string> = {
-        config: 'configuration',
-        telemetry: 'telemetry',
-        hud: 'HUD',
-      }
-      btn.title = isCollapsed ? `Show ${labels[id]}` : `Hide ${labels[id]}`
+      const label = id === 'config' ? messages.panels.config : messages.panels.flight
+      btn.title = `${isCollapsed ? messages.panels.show : messages.panels.hide} ${label}`
     }
     persistCollapsed()
   }
 
   function hidHint(key: EffectKey, intensity: number): string {
     return key === 'master'
-      ? 'Final HID multiplier'
-      : `Ceiling ≈ ${Math.round((intensity / 100) * 255)} HID`
+      ? messages.config.masterHint
+      : formatMessage(messages.config.ceilingHint, { n: Math.round((intensity / 100) * 255) })
   }
 
   function renderEffects(current: LauncherPreferences): void {
     const profile = current.profiles[current.activeProfile]
     effectList.innerHTML = EFFECT_KEYS.map((key) => {
       const effect = profile[key]
+      const name = messages.effects[key]
       return `
         <div class="effect-card" data-effect="${key}">
           <div class="effect-row">
-            <span class="effect-name">${EFFECT_LABELS[key]}</span>
+            <span class="effect-name">${name}</span>
             <div class="effect-controls">
               <span class="effect-pct" title="${hidHint(key, effect.intensity)}">${Math.round(effect.intensity)}%</span>
-              <label class="switch" title="Enable ${EFFECT_LABELS[key]}">
+              <label class="switch" title="${messages.config.enableEffect} ${name}">
                 <input type="checkbox" data-role="enabled" ${effect.enabled ? 'checked' : ''} />
                 <span></span>
               </label>
@@ -302,7 +309,6 @@ export async function mountApp(
     }).join('')
   }
 
-  /** Update labels/checkboxes without rebuilding range inputs (keeps drag fluid). */
   function softSyncEffects(current: LauncherPreferences): void {
     const profile = current.profiles[current.activeProfile]
     for (const key of EFFECT_KEYS) {
@@ -332,6 +338,8 @@ export async function mountApp(
   function syncChrome(current: LauncherPreferences, rebuildEffects = true): void {
     applyTheme(current.appearance.theme)
     themeSelect.value = current.appearance.theme
+    localeSelect.value = current.appearance.locale
+    tele.reverseStick.checked = current.appearance.reverseStickY
     for (const tab of tabs) {
       const selected = tab.dataset.profile === current.activeProfile
       tab.setAttribute('aria-selected', selected ? 'true' : 'false')
@@ -344,7 +352,8 @@ export async function mountApp(
   }
 
   function setSaveStatus(status: SaveStatus): void {
-    saveStatusEl.textContent = status
+    lastSaveStatus = status
+    saveStatusEl.textContent = saveStatusLabel(status, messages)
     saveStatusEl.dataset.status = status
   }
 
@@ -352,32 +361,34 @@ export async function mountApp(
     const sim = snap?.connection.simconnect
     if (sim === 'connected') {
       simPill.dataset.state = 'online'
-      simLabel.textContent = `SimConnect · ${bridgeState.simApplicationName || 'Connected'}`
+      simLabel.textContent = `${messages.sim.connected.replace('Connected', bridgeState.simApplicationName || 'Connected').replace('Connecté', bridgeState.simApplicationName || 'Connecté')}`
+      if (bridgeState.simApplicationName) {
+        simLabel.textContent = `SimConnect · ${bridgeState.simApplicationName}`
+      } else {
+        simLabel.textContent = messages.sim.connected
+      }
       return
     }
     if (sim === 'connecting' || (bridgeState.running && !bridgeState.simConnected)) {
       simPill.dataset.state = 'connecting'
-      simLabel.textContent = 'SimConnect · Connecting'
+      simLabel.textContent = messages.sim.connecting
       return
     }
     if (sim === 'error' || snap?.stale) {
       simPill.dataset.state = 'error'
-      simLabel.textContent = 'SimConnect · Error'
+      simLabel.textContent = messages.sim.error
       return
     }
     simPill.dataset.state = 'offline'
-    simLabel.textContent = 'SimConnect · Disconnected'
+    simLabel.textContent = messages.sim.disconnected
   }
 
   function syncBridgeUi(state: BridgeRuntimeState): void {
     const running = state.status === 'running' || state.status === 'starting'
-    engineBtn.textContent = running ? 'Stop' : 'Start'
+    engineBtn.textContent = running ? messages.bridge.stop : messages.bridge.start
     engineBtn.disabled = !bridge?.isAvailable() || state.status === 'starting' || state.status === 'stopping'
-
     syncSimPillFromTelemetry(targetTelemetry, state)
-    bridgeFooter.textContent = running
-      ? 'Bridge running — preference changes apply live'
-      : 'Preferences stored in the OS app data directory'
+    bridgeFooter.textContent = running ? messages.bridge.runningFooter : messages.bridge.idleFooter
   }
 
   function onTelemetry(snap: TelemetrySnapshot): void {
@@ -389,7 +400,7 @@ export async function mountApp(
     lastAircraftKey = key
     engineCount = snap.aircraft.engineCount
     targetTelemetry = snap
-    renderTelemetryCards(tele, snap)
+    renderTelemetryCards(tele, snap, messages)
     syncSimPillFromTelemetry(snap, bridge?.getState() ?? {
       status: 'stopped',
       running: false,
@@ -418,11 +429,16 @@ export async function mountApp(
         windDirectionDeg: target.flight.windDirectionDeg,
         windVelocityKts: target.flight.windVelocityKts,
       }, 0.18)
-      renderControls(tele, smoothControls, engineCount || target.aircraft.engineCount)
+      renderControls(
+        tele,
+        smoothControls,
+        engineCount || target.aircraft.engineCount,
+        prefs.appearance.reverseStickY,
+      )
       const active = target.connection.simconnect === 'connected'
-      drawHud(hud, smoothFlight, active, Boolean(target.stale))
+      drawHud(hud, smoothFlight, active, Boolean(target.stale), messages)
     } else {
-      drawHud(hud, smoothFlight, false, false)
+      drawHud(hud, smoothFlight, false, false, messages)
     }
     raf = requestAnimationFrame(tick)
   }
@@ -433,67 +449,227 @@ export async function mountApp(
       const { getCurrentWindow } = await import('@tauri-apps/api/window')
       maximized = await getCurrentWindow().isMaximized()
       btnMax.innerHTML = maximized ? iconRestore() : iconMaximize()
-      btnMax.title = maximized ? 'Restore' : 'Maximize'
-      btnMax.setAttribute('aria-label', maximized ? 'Restore' : 'Maximize')
+      btnMax.title = maximized ? messages.window.restore : messages.window.maximize
+      btnMax.setAttribute('aria-label', maximized ? messages.window.restore : messages.window.maximize)
       root.classList.toggle('is-maximized', maximized)
     } catch {
       /* preview */
     }
   }
 
+  function wireDom(): void {
+    effectList = root.querySelector('#effect-list') as HTMLElement
+    themeSelect = root.querySelector('#theme-select') as HTMLSelectElement
+    localeSelect = root.querySelector('#locale-select') as HTMLSelectElement
+    saveStatusEl = root.querySelector('#save-status') as HTMLElement
+    resetBtn = root.querySelector('#btn-reset') as HTMLButtonElement
+    engineBtn = root.querySelector('#btn-engine') as HTMLButtonElement
+    simPill = root.querySelector('#sim-pill') as HTMLElement
+    simLabel = root.querySelector('#sim-label') as HTMLElement
+    bridgeFooter = root.querySelector('#bridge-footer') as HTMLElement
+    btnMin = root.querySelector('#btn-win-min') as HTMLButtonElement
+    btnMax = root.querySelector('#btn-win-max') as HTMLButtonElement
+    btnClose = root.querySelector('#btn-win-close') as HTMLButtonElement
+    tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.tab'))
+    collapseBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('.panel-rail-btn'))
+    tele = bindTelemetryPanel(root)
+    hud = bindHud(root)
+
+    for (const btn of collapseBtns) {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.panel as PanelId
+        collapsed = { ...collapsed, [id]: !collapsed[id] }
+        syncPanelCollapse()
+      })
+    }
+
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const profile = tab.dataset.profile as ActiveProfile
+        controller.updatePreferences((current) => ({
+          ...current,
+          activeProfile: profile,
+        }))
+      })
+    })
+
+    themeSelect.addEventListener('change', () => {
+      const theme = themeSelect.value as ThemePreference
+      controller.updatePreferences((current) => ({
+        ...current,
+        appearance: { ...current.appearance, theme },
+      }))
+    })
+
+    localeSelect.addEventListener('change', () => {
+      const locale = localeSelect.value as LocaleCode
+      controller.updatePreferences((current) => ({
+        ...current,
+        appearance: { ...current.appearance, locale },
+      }))
+    })
+
+    resetBtn.addEventListener('click', () => {
+      void controller.resetPreferences()
+    })
+
+    tele.reverseStick.addEventListener('change', () => {
+      const reverseStickY = tele.reverseStick.checked
+      controller.updatePreferences((current) => ({
+        ...current,
+        appearance: { ...current.appearance, reverseStickY },
+      }))
+    })
+
+    effectList.addEventListener('pointerdown', (event) => {
+      const target = event.target as HTMLElement
+      if (target.dataset?.role === 'intensity') sliderPointerDown = true
+    })
+
+    effectList.addEventListener('input', (event) => {
+      const target = event.target as HTMLInputElement
+      if (target.dataset.role !== 'intensity') return
+      const card = target.closest<HTMLElement>('[data-effect]')
+      const key = card?.dataset.effect as EffectKey | undefined
+      if (!key) return
+      const intensity = Number(target.value)
+      const pct = card?.querySelector('.effect-pct')
+      if (pct) {
+        pct.textContent = `${Math.round(intensity)}%`
+        pct.setAttribute('title', hidHint(key, intensity))
+      }
+      target.title = hidHint(key, intensity)
+
+      controller.updatePreferences((current) => {
+        const active = current.activeProfile
+        return {
+          ...current,
+          profiles: {
+            ...current.profiles,
+            [active]: {
+              ...current.profiles[active],
+              [key]: {
+                ...current.profiles[active][key],
+                intensity,
+              },
+            },
+          },
+        }
+      })
+    })
+
+    effectList.addEventListener('change', (event) => {
+      const target = event.target as HTMLInputElement
+      if (target.dataset.role !== 'enabled') return
+      const card = target.closest<HTMLElement>('[data-effect]')
+      const key = card?.dataset.effect as EffectKey | undefined
+      if (!key) return
+      const enabled = target.checked
+      controller.updatePreferences((current) => {
+        const active = current.activeProfile
+        return {
+          ...current,
+          profiles: {
+            ...current.profiles,
+            [active]: {
+              ...current.profiles[active],
+              [key]: {
+                ...current.profiles[active][key],
+                enabled,
+              },
+            },
+          },
+        }
+      })
+    })
+
+    engineBtn.addEventListener('click', () => {
+      if (!bridge?.isAvailable()) return
+      const state = bridge.getState()
+      const running = state.status === 'running' || state.status === 'starting'
+      engineBtn.disabled = true
+      if (!running) {
+        eventSession += 1
+        resetFlightEvents(tele.timeline)
+        lastAircraftKey = ''
+      }
+      const action = running
+        ? bridge.stop()
+        : bridge.start(controller.getPreferences())
+      void action.catch((err) => {
+        console.error('[launcher] bridge start/stop failed:', err)
+        bridgeFooter.textContent = `${messages.bridge.errorPrefix} ${err instanceof Error ? err.message : String(err)}`
+      })
+    })
+
+    if (isTauri) {
+      void (async () => {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window')
+        const win = getCurrentWindow()
+        await syncMaximizedState()
+
+        btnMin.addEventListener('click', () => {
+          void win.minimize()
+        })
+        btnMax.addEventListener('click', async () => {
+          await win.toggleMaximize()
+          await syncMaximizedState()
+        })
+        btnClose.addEventListener('click', () => {
+          if (onRequestQuit) {
+            void onRequestQuit()
+            return
+          }
+          void win.close()
+        })
+
+        const drag = root.querySelector('.titlebar-drag') as HTMLElement
+        drag.addEventListener('dblclick', async () => {
+          await win.toggleMaximize()
+          await syncMaximizedState()
+        })
+
+        await win.onResized(() => {
+          void syncMaximizedState()
+        })
+      })()
+    } else {
+      btnMin.disabled = true
+      btnMax.disabled = true
+      btnClose.disabled = true
+    }
+  }
+
+  function applyLocale(locale: LocaleCode): void {
+    messages = getMessages(locale)
+    document.documentElement.lang = locale
+    const prevCollapsed = { ...collapsed }
+    const prevTele = targetTelemetry
+    cancelAnimationFrame(raf)
+    buildShell()
+    wireDom()
+    collapsed = prevCollapsed
+    syncPanelCollapse()
+    syncChrome(prefs, true)
+    setSaveStatus(lastSaveStatus)
+    if (prevTele) {
+      targetTelemetry = prevTele
+      renderTelemetryCards(tele, prevTele, messages)
+    }
+    if (bridge) syncBridgeUi(bridge.getState())
+    raf = requestAnimationFrame(tick)
+  }
+
+  wireDom()
   syncPanelCollapse()
   syncChrome(prefs)
   setSaveStatus(controller.getSaveStatus())
+  document.documentElement.lang = prefs.appearance.locale
   if (targetTelemetry) {
     engineCount = targetTelemetry.aircraft.engineCount
-    renderTelemetryCards(tele, targetTelemetry)
+    renderTelemetryCards(tele, targetTelemetry, messages)
   }
 
-  controller.subscribe((next) => {
-    prefs = next
-    syncChrome(next, !sliderPointerDown)
-    if (bridge?.isAvailable()) {
-      void bridge.updatePreferences(next).catch((err) => {
-        console.error('[launcher] bridge updatePreferences failed:', err)
-      })
-    }
-  })
-  controller.subscribeStatus(setSaveStatus)
-
-  for (const btn of collapseBtns) {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.panel as PanelId
-      collapsed = { ...collapsed, [id]: !collapsed[id] }
-      syncPanelCollapse()
-    })
-  }
-
-  tabs.forEach((tab) => {
-    tab.addEventListener('click', () => {
-      const profile = tab.dataset.profile as ActiveProfile
-      controller.updatePreferences((current) => ({
-        ...current,
-        activeProfile: profile,
-      }))
-    })
-  })
-
-  themeSelect.addEventListener('change', () => {
-    const theme = themeSelect.value as ThemePreference
-    controller.updatePreferences((current) => ({
-      ...current,
-      appearance: { ...current.appearance, theme },
-    }))
-  })
-
-  resetBtn.addEventListener('click', () => {
-    void controller.resetPreferences()
-  })
-
-  effectList.addEventListener('pointerdown', (event) => {
-    const target = event.target as HTMLElement
-    if (target.dataset?.role === 'intensity') sliderPointerDown = true
-  })
   window.addEventListener('pointerup', () => {
     if (!sliderPointerDown) return
     sliderPointerDown = false
@@ -503,128 +679,31 @@ export async function mountApp(
     sliderPointerDown = false
   })
 
-  effectList.addEventListener('input', (event) => {
-    const target = event.target as HTMLInputElement
-    if (target.dataset.role !== 'intensity') return
-    const card = target.closest<HTMLElement>('[data-effect]')
-    const key = card?.dataset.effect as EffectKey | undefined
-    if (!key) return
-    const intensity = Number(target.value)
-    const pct = card?.querySelector('.effect-pct')
-    if (pct) {
-      pct.textContent = `${Math.round(intensity)}%`
-      pct.setAttribute('title', hidHint(key, intensity))
+  controller.subscribe((next) => {
+    const localeChanged = next.appearance.locale !== prefs.appearance.locale
+    prefs = next
+    if (localeChanged) {
+      applyLocale(next.appearance.locale)
+    } else {
+      syncChrome(next, !sliderPointerDown)
     }
-    target.title = hidHint(key, intensity)
-
-    controller.updatePreferences((current) => {
-      const active = current.activeProfile
-      return {
-        ...current,
-        profiles: {
-          ...current.profiles,
-          [active]: {
-            ...current.profiles[active],
-            [key]: {
-              ...current.profiles[active][key],
-              intensity,
-            },
-          },
-        },
-      }
-    })
-  })
-
-  effectList.addEventListener('change', (event) => {
-    const target = event.target as HTMLInputElement
-    if (target.dataset.role !== 'enabled') return
-    const card = target.closest<HTMLElement>('[data-effect]')
-    const key = card?.dataset.effect as EffectKey | undefined
-    if (!key) return
-    const enabled = target.checked
-    controller.updatePreferences((current) => {
-      const active = current.activeProfile
-      return {
-        ...current,
-        profiles: {
-          ...current.profiles,
-          [active]: {
-            ...current.profiles[active],
-            [key]: {
-              ...current.profiles[active][key],
-              enabled,
-            },
-          },
-        },
-      }
-    })
-  })
-
-  engineBtn.addEventListener('click', () => {
-    if (!bridge?.isAvailable()) return
-    const state = bridge.getState()
-    const running = state.status === 'running' || state.status === 'starting'
-    engineBtn.disabled = true
-    if (!running) {
-      eventSession += 1
-      resetFlightEvents(tele.timeline)
-      lastAircraftKey = ''
+    if (bridge?.isAvailable()) {
+      void bridge.updatePreferences(next).catch((err) => {
+        console.error('[launcher] bridge updatePreferences failed:', err)
+      })
     }
-    const action = running
-      ? bridge.stop()
-      : bridge.start(controller.getPreferences())
-    void action.catch((err) => {
-      console.error('[launcher] bridge start/stop failed:', err)
-      bridgeFooter.textContent = `Bridge error: ${err instanceof Error ? err.message : String(err)}`
-    })
   })
-
-  if (isTauri) {
-    void (async () => {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      const win = getCurrentWindow()
-      await syncMaximizedState()
-
-      btnMin.addEventListener('click', () => {
-        void win.minimize()
-      })
-      btnMax.addEventListener('click', async () => {
-        await win.toggleMaximize()
-        await syncMaximizedState()
-      })
-      btnClose.addEventListener('click', () => {
-        if (onRequestQuit) {
-          void onRequestQuit()
-          return
-        }
-        void win.close()
-      })
-
-      const drag = root.querySelector('.titlebar-drag') as HTMLElement
-      drag.addEventListener('dblclick', async () => {
-        await win.toggleMaximize()
-        await syncMaximizedState()
-      })
-
-      await win.onResized(() => {
-        void syncMaximizedState()
-      })
-    })()
-  } else {
-    btnMin.disabled = true
-    btnMax.disabled = true
-    btnClose.disabled = true
-  }
+  controller.subscribeStatus(setSaveStatus)
 
   const unsubs: Array<() => void> = []
   if (bridge) {
     unsubs.push(bridge.onState(syncBridgeUi))
     unsubs.push(bridge.onTelemetry(onTelemetry))
     unsubs.push(bridge.onFlightEvent((event) => {
-      appendFlightEvent(tele.timeline, event, eventSession)
+      appendFlightEvent(tele.timeline, event, eventSession, messages)
     }))
     unsubs.push(bridge.onError((message) => {
-      bridgeFooter.textContent = `Bridge error: ${message}`
+      bridgeFooter.textContent = `${messages.bridge.errorPrefix} ${message}`
     }))
   }
 

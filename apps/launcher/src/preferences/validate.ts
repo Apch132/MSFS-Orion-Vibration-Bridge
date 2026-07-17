@@ -1,3 +1,4 @@
+import { normalizeLocale } from '../i18n'
 import { getDefaultPreferences } from './defaults'
 import {
   CURRENT_SCHEMA_VERSION,
@@ -83,6 +84,7 @@ export function validateAndMigratePreferences(raw: unknown): LauncherPreferences
 
   const profilesRaw = isPlainObject(obj.profiles) ? obj.profiles : {}
   const appearanceRaw = isPlainObject(obj.appearance) ? obj.appearance : {}
+  const hasSavedLocale = Object.prototype.hasOwnProperty.call(appearanceRaw, 'locale')
 
   const migrated: LauncherPreferences = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -93,6 +95,11 @@ export function validateAndMigratePreferences(raw: unknown): LauncherPreferences
     },
     appearance: {
       theme: normalizeTheme(appearanceRaw.theme, defaults.appearance.theme),
+      // First launch (no locale key): keep OS-detected default. Else persist / normalize.
+      locale: hasSavedLocale
+        ? normalizeLocale(appearanceRaw.locale, defaults.appearance.locale)
+        : defaults.appearance.locale,
+      reverseStickY: asBoolean(appearanceRaw.reverseStickY, defaults.appearance.reverseStickY),
     },
   }
 

@@ -57,6 +57,8 @@ describe('telemetry normalization', () => {
   it('bounds control axes', () => {
     assert.equal(normalizeAxis(-5), -1)
     assert.equal(normalizeAxis(0.25), 0.25)
+    assert.equal(normalizeAxis(0), 0)
+    assert.equal(normalizeAxis(2), 1)
   })
 
   it('supports single and twin engines', () => {

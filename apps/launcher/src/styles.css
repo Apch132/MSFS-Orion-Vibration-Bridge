@@ -342,8 +342,7 @@ body {
 }
 
 .panel-config,
-.panel-telemetry,
-.panel-hud {
+.panel-flight {
   transition:
     flex-grow 220ms linear,
     flex-shrink 220ms linear,
@@ -356,23 +355,23 @@ body {
 }
 
 .panel-config {
-  flex: 1.05 1 280px;
-  max-width: 420px;
+  flex: 0 1 360px;
+  max-width: 400px;
+  align-self: stretch;
 }
 
-.panel-telemetry {
-  flex: 1 1 240px;
-  max-width: 520px;
-}
-
-.panel-hud {
-  flex: 1.15 1 260px;
-  min-width: 220px;
+.panel-flight {
+  flex: 1 1 420px;
+  max-width: none;
+  align-self: flex-start;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .layout[data-config-collapsed='true'] .panel-config,
-.layout[data-telemetry-collapsed='true'] .panel-telemetry,
-.layout[data-hud-collapsed='true'] .panel-hud {
+.layout[data-flight-collapsed='true'] .panel-flight {
   flex-grow: 0;
   flex-shrink: 0;
   flex-basis: 0;
@@ -385,15 +384,60 @@ body {
   pointer-events: none;
 }
 
-/* When side panels collapse, remaining panels reclaim space horizontally */
-.layout[data-config-collapsed='true'] .panel-telemetry,
-.layout[data-config-collapsed='true'] .panel-hud,
-.layout[data-telemetry-collapsed='true'] .panel-config,
-.layout[data-telemetry-collapsed='true'] .panel-hud,
-.layout[data-hud-collapsed='true'] .panel-config,
-.layout[data-hud-collapsed='true'] .panel-telemetry {
+.layout[data-config-collapsed='true'] .panel-flight {
   max-width: none;
+  flex: 1 1 auto;
 }
+
+.panel-body-flight {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  padding: 10px;
+  max-height: calc(100vh - 120px);
+}
+
+.flight-hud-sticky {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-panel);
+  padding-bottom: 4px;
+}
+
+.flight-tele-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.stick-reverse {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.stick-reverse input {
+  accent-color: var(--accent);
+}
+
+.wind-convention {
+  margin: 6px 0 0;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+/* When side panels collapse, remaining panels reclaim space horizontally */
 
 .intensity-help {
   margin: 0 0 12px;
@@ -791,11 +835,10 @@ select {
   top: 50%;
   width: 10px;
   height: 10px;
-  margin: -5px 0 0 -5px;
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent-glow);
-  transition: transform 0.05s linear;
+  transform: translate(-50%, -50%);
 }
 
 .throttle-col {
@@ -957,52 +1000,20 @@ select {
 }
 
 .hud-shell {
-  height: 100%;
-  min-height: 200px;
+  width: min(100%, 320px);
+  aspect-ratio: 1;
+  max-height: 320px;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  justify-content: center;
 }
 
 .hud-shell canvas {
-  flex: 1;
   width: 100%;
-  max-height: 280px;
+  height: 100%;
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
   background: #060e0a;
-}
-
-.hud-readouts {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
-}
-
-.hud-readouts div {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 6px;
-  text-align: center;
-}
-
-.hud-readouts span {
-  display: block;
-  font-size: 9px;
-  color: var(--text-dim);
-  letter-spacing: 0.06em;
-}
-
-.hud-readouts strong {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--accent);
-  font-weight: 500;
-}
-
-.hud-shell[data-stale='true'] .hud-readouts strong {
-  color: var(--text-dim);
 }
 
 .save-status {
@@ -1042,16 +1053,19 @@ select {
 
   .panel,
   .panel-config,
-  .panel-telemetry,
-  .panel-hud {
-    min-height: 280px;
+  .panel-flight {
+    min-height: 0;
     max-width: none;
     flex: 1 1 auto;
+    align-self: stretch;
+  }
+
+  .panel-body-flight {
+    max-height: none;
   }
 
   .layout[data-config-collapsed='true'] .panel-config,
-  .layout[data-telemetry-collapsed='true'] .panel-telemetry,
-  .layout[data-hud-collapsed='true'] .panel-hud {
+  .layout[data-flight-collapsed='true'] .panel-flight {
     min-height: 0;
     max-height: 0;
     flex-basis: 0;

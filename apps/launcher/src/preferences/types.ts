@@ -1,7 +1,10 @@
 /** Shared preference types for the desktop launcher (schema v1). */
 
+import type { LocaleCode } from '../i18n'
+
 export type ThemePreference = 'cockpit' | 'dark' | 'light' | 'system'
 export type ActiveProfile = 'aircraft' | 'helicopter'
+export type { LocaleCode }
 
 export type EffectSettings = {
   enabled: boolean
@@ -34,6 +37,15 @@ export type LauncherPreferences = {
   }
   appearance: {
     theme: ThemePreference
+    /** UI language. Detected from OS on first launch, then persisted. */
+    locale: LocaleCode
+    /**
+     * UI-only stick display invert.
+     * Off (default): push stick → pip up, pull → pip down.
+     * On: push → down, pull → up.
+     * Does not alter SimConnect data.
+     */
+    reverseStickY: boolean
   }
 }
 
@@ -50,18 +62,6 @@ export const EFFECT_KEYS: EffectKey[] = [
   'groundRoll',
   'transonic',
 ]
-
-export const EFFECT_LABELS: Record<EffectKey, string> = {
-  master: 'Master (global)',
-  engine: 'Engine',
-  afterburner: 'Afterburner',
-  gear: 'Gear',
-  flaps: 'Flaps',
-  stall: 'Stall',
-  touchdown: 'Touchdown',
-  groundRoll: 'Ground roll',
-  transonic: 'Transonic',
-}
 
 export type SaveStatus = 'Saved' | 'Saving…' | 'Error'
 
