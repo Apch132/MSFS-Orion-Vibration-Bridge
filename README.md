@@ -44,7 +44,7 @@ Typecheck:
 npm run typecheck:launcher
 ```
 
-**Current launcher status:** preferences load/validate/autosave/reset work; Start/Stop drives the **shared bridge runtime** (same engine as the CLI) through the packaged sidecar; live SimConnect telemetry feeds the Telemetry cards, animated controls, flight-event timeline, and HUD (see [docs/TELEMETRY.md](docs/TELEMETRY.md)).
+**Current launcher status:** preferences load/validate/autosave/reset work; Start/Stop drives the **shared bridge runtime** (same engine as the CLI) through the packaged sidecar; custom frameless title bar; per-panel collapse with horizontal animation; live SimConnect telemetry (stick, engines, wind) and a compact HUD (horizon, compass, FPV, IAS/GS/ALT/Mach/G/wind) — see [docs/TELEMETRY.md](docs/TELEMETRY.md) and [docs/INTENSITY.md](docs/INTENSITY.md).
 
 ### Telemetry architecture
 

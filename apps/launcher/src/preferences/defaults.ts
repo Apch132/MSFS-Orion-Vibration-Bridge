@@ -5,30 +5,34 @@ function effect(intensity = 100, enabled = true): EffectSettings {
   return { enabled, intensity }
 }
 
+/**
+ * Defaults match historical feel-unit peaks as HID ceilings (see docs/INTENSITY.md).
+ * 100% = full HID 255 when dynamicFactor is 1 — not “legacy feel”.
+ */
 function defaultAircraftProfile(): VibrationProfile {
   return {
     master: effect(100),
-    engine: effect(100),
-    afterburner: effect(100),
-    gear: effect(100),
-    flaps: effect(100),
-    stall: effect(100),
+    engine: effect(18),
+    afterburner: effect(30),
+    gear: effect(35),
+    flaps: effect(18),
+    stall: effect(70),
     touchdown: effect(100),
-    groundRoll: effect(80),
-    transonic: effect(100),
+    groundRoll: effect(40),
+    transonic: effect(55),
   }
 }
 
 function defaultHelicopterProfile(): VibrationProfile {
   return {
     master: effect(100),
-    engine: effect(90),
+    engine: effect(40),
     afterburner: effect(0, false),
-    gear: effect(70),
+    gear: effect(45),
     flaps: effect(0, false),
-    stall: effect(80),
+    stall: effect(56),
     touchdown: effect(100),
-    groundRoll: effect(60),
+    groundRoll: effect(40),
     transonic: effect(0, false),
   }
 }

@@ -49,7 +49,9 @@ Numeric fields are finite and bounded. Missing values use documented defaults (e
 | PLANE BANK DEGREES | degrees | bankDeg | HUD |
 | G FORCE | GForce | gForce | G / HUD / vibration |
 | INCIDENCE ALPHA | degrees | aoa | FPM / vibration |
-| INCIDENCE BETA | degrees | sideslipDeg | FPM |
+| INCIDENCE BETA | degrees | sideslipDeg | FPV |
+| AMBIENT WIND DIRECTION | degrees | windDirectionDeg | HUD wind |
+| AMBIENT WIND VELOCITY | knots | windVelocityKnots | HUD wind |
 | SIM ON GROUND | bool | onGround | phase / events |
 | GEAR LEFT/RIGHT/CENTER POSITION | percent | gear*Pct | vibration |
 | TRAILING EDGE FLAPS LEFT PERCENT | percent | flapsLeftPct | flaps |

@@ -170,6 +170,14 @@ body {
   font-weight: 600;
 }
 
+.panel-collapse {
+  font-weight: 600;
+  min-width: 28px;
+  padding-inline: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .topbar,
 .statusbar {
   display: flex;
@@ -269,9 +277,9 @@ body {
   overflow: hidden;
 }
 
-.panel-config {
-  flex: 1.05 1 280px;
-  max-width: 420px;
+.panel-config,
+.panel-telemetry,
+.panel-hud {
   transition:
     flex-grow 220ms linear,
     flex-shrink 220ms linear,
@@ -283,7 +291,24 @@ body {
     border-width 220ms linear;
 }
 
-.layout[data-config-collapsed='true'] .panel-config {
+.panel-config {
+  flex: 1.05 1 280px;
+  max-width: 420px;
+}
+
+.panel-telemetry {
+  flex: 1 1 240px;
+  max-width: 520px;
+}
+
+.panel-hud {
+  flex: 1.15 1 260px;
+  min-width: 220px;
+}
+
+.layout[data-config-collapsed='true'] .panel-config,
+.layout[data-telemetry-collapsed='true'] .panel-telemetry,
+.layout[data-hud-collapsed='true'] .panel-hud {
   flex-grow: 0;
   flex-shrink: 0;
   flex-basis: 0;
@@ -296,9 +321,48 @@ body {
   pointer-events: none;
 }
 
-.panel-telemetry,
-.panel-hud {
-  flex: 1 1 240px;
+/* When side panels collapse, HUD / remaining panels reclaim space horizontally */
+.layout[data-config-collapsed='true'] .panel-telemetry,
+.layout[data-config-collapsed='true'] .panel-hud,
+.layout[data-telemetry-collapsed='true'] .panel-config,
+.layout[data-telemetry-collapsed='true'] .panel-hud,
+.layout[data-hud-collapsed='true'] .panel-config,
+.layout[data-hud-collapsed='true'] .panel-telemetry {
+  max-width: none;
+}
+
+.intensity-help {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-deep);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.intensity-help p {
+  margin: 0 0 6px;
+}
+
+.intensity-help p:last-child {
+  margin-bottom: 0;
+}
+
+.intensity-help ul {
+  margin: 4px 0 8px;
+  padding-left: 1.15em;
+}
+
+.intensity-help li {
+  margin: 2px 0;
+}
+
+.intensity-help-scale {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
 }
 
 .intensity-hint {
@@ -324,6 +388,7 @@ body {
 
 .panel-header span.label {
   flex: 1;
+  min-width: 0;
 }
 
 .panel-body {
@@ -443,10 +508,17 @@ body {
 .slider {
   width: 100%;
   accent-color: var(--accent);
+  touch-action: none;
 }
 
 .slider:disabled {
   opacity: 0.45;
+}
+
+.effect-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .field-row {
@@ -734,6 +806,64 @@ select {
   background: var(--warn);
 }
 
+.throttle-col[data-na='true'] {
+  opacity: 0.4;
+}
+
+.throttle-col[hidden] {
+  display: none;
+}
+
+.engine-gauges {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.engine-gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-deep);
+}
+
+.engine-gauge[data-na='true'] strong {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.engine-gauge strong {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.engine-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.engine-bar > div {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+}
+
+.engine-na {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
 .event-timeline {
   list-style: none;
   margin: 0;
@@ -764,15 +894,16 @@ select {
 
 .hud-shell {
   height: 100%;
-  min-height: 240px;
+  min-height: 200px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .hud-shell canvas {
   flex: 1;
   width: 100%;
+  max-height: 280px;
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
   background: #060e0a;
@@ -780,8 +911,8 @@ select {
 
 .hud-readouts {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
 }
 
 .hud-readouts div {
@@ -849,7 +980,9 @@ select {
     flex: 1 1 auto;
   }
 
-  .layout[data-config-collapsed='true'] .panel-config {
+  .layout[data-config-collapsed='true'] .panel-config,
+  .layout[data-telemetry-collapsed='true'] .panel-telemetry,
+  .layout[data-hud-collapsed='true'] .panel-hud {
     min-height: 0;
     max-height: 0;
     flex-basis: 0;

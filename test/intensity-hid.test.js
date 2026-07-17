@@ -40,6 +40,7 @@ describe('HID intensity semantics', () => {
 
   it('stall at 100% with master 100% can reach full HID', () => {
     const prefs = getDefaultBridgePreferences()
+    prefs.profiles.aircraft.stall.intensity = 100
     const touchdown = createTouchdownTracker()
     const meta = { lastEngineType: -1, lastEnginesRunning: -1 }
     const out = computeMotorIntensities({
@@ -72,6 +73,63 @@ describe('HID intensity semantics', () => {
     })
     assert.ok(out['F16 JGRIP'] >= 250, `expected near-full HID, got ${out['F16 JGRIP']}`)
     assert.ok(out['F16 JGRIP'] <= 255)
+  })
+
+  it('default aircraft ceilings reconstruct historical feel peaks', () => {
+    const prefs = getDefaultBridgePreferences()
+    const a = prefs.profiles.aircraft
+    assert.equal(a.engine.intensity, 18)
+    assert.equal(a.afterburner.intensity, 30)
+    assert.equal(a.gear.intensity, 35)
+    assert.equal(a.flaps.intensity, 18)
+    assert.equal(a.stall.intensity, 70)
+    assert.equal(a.transonic.intensity, 55)
+    assert.equal(a.touchdown.intensity, 100)
+    assert.equal(a.master.intensity, 100)
+
+    const h = prefs.profiles.helicopter
+    assert.equal(h.engine.intensity, 40)
+    assert.equal(h.gear.intensity, 45)
+    assert.equal(h.stall.intensity, 56)
+    assert.equal(h.afterburner.enabled, false)
+    assert.equal(h.flaps.enabled, false)
+    assert.equal(h.transonic.enabled, false)
+  })
+
+  it('stall default ceiling (~70%) yields historical ~178 HID', () => {
+    const prefs = getDefaultBridgePreferences()
+    const touchdown = createTouchdownTracker()
+    const meta = { lastEngineType: -1, lastEnginesRunning: -1 }
+    const out = computeMotorIntensities({
+      state: {
+        numberOfEngines: 1,
+        engCombustion1: 1,
+        engineRpm1: 1000,
+        engineType: 1,
+        onGround: 0,
+        stallWarning: 1,
+        gearLeftPct: 0,
+        gearRightPct: 0,
+        gearNosePct: 0,
+        gearPct: 0,
+        gForce: 1,
+        mach: 0.4,
+        airspeedKnots: 200,
+        flapsLeftPct: 0,
+        speedbrakePct: 0,
+        afterburnerPct1: 0,
+        afterburnerPct2: 0,
+        vertSpeedFpm: 0,
+        apuPctRpm: 0,
+      },
+      preferences: prefs,
+      touchdown,
+      nowMs: 1000,
+      meta,
+      deviceConfig: DEVICE_CONFIG,
+    })
+    // 70 feel-units × 2.55 ≈ 178.5 HID
+    assert.ok(out['F16 JGRIP'] >= 170 && out['F16 JGRIP'] <= 185, `got ${out['F16 JGRIP']}`)
   })
 
   it('master 50% halves the summed HID contribution', () => {

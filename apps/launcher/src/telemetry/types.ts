@@ -43,6 +43,8 @@ export type TelemetrySnapshot = {
     gForce: number
     angleOfAttackDeg: number
     sideslipDeg: number
+    windDirectionDeg: number
+    windVelocityKts: number
   }
   aircraftState: {
     onGround: boolean
@@ -116,6 +118,8 @@ export function createEmptyTelemetry(): TelemetrySnapshot {
       gForce: 1,
       angleOfAttackDeg: 0,
       sideslipDeg: 0,
+      windDirectionDeg: 0,
+      windVelocityKts: 0,
     },
     aircraftState: {
       onGround: true,
@@ -205,6 +209,8 @@ export function asTelemetrySnapshot(value: unknown): TelemetrySnapshot | null {
       gForce: finite(flight.gForce, empty.flight.gForce),
       angleOfAttackDeg: finite(flight.angleOfAttackDeg, empty.flight.angleOfAttackDeg),
       sideslipDeg: finite(flight.sideslipDeg, empty.flight.sideslipDeg),
+      windDirectionDeg: finite(flight.windDirectionDeg, empty.flight.windDirectionDeg),
+      windVelocityKts: finite(flight.windVelocityKts, empty.flight.windVelocityKts),
     },
     aircraftState: {
       onGround: Boolean(aircraftState.onGround),

@@ -35,12 +35,15 @@ export type SmoothFlight = {
   pitchDeg: number
   bankDeg: number
   indicatedAirspeedKts: number
+  groundSpeedKts: number
   altitudeFt: number
   mach: number
   gForce: number
   verticalSpeedFpm: number
   angleOfAttackDeg: number
   sideslipDeg: number
+  windDirectionDeg: number
+  windVelocityKts: number
 }
 
 export function createSmoothControls(): SmoothControls {
@@ -61,12 +64,15 @@ export function createSmoothFlight(): SmoothFlight {
     pitchDeg: 0,
     bankDeg: 0,
     indicatedAirspeedKts: 0,
+    groundSpeedKts: 0,
     altitudeFt: 0,
     mach: 0,
     gForce: 1,
     verticalSpeedFpm: 0,
     angleOfAttackDeg: 0,
     sideslipDeg: 0,
+    windDirectionDeg: 0,
+    windVelocityKts: 0,
   }
 }
 
@@ -96,11 +102,14 @@ export function stepFlight(
     pitchDeg: lerp(current.pitchDeg, target.pitchDeg, alpha),
     bankDeg: lerp(current.bankDeg, target.bankDeg, alpha),
     indicatedAirspeedKts: lerp(current.indicatedAirspeedKts, target.indicatedAirspeedKts, alpha),
+    groundSpeedKts: lerp(current.groundSpeedKts, target.groundSpeedKts, alpha),
     altitudeFt: lerp(current.altitudeFt, target.altitudeFt, alpha),
     mach: lerp(current.mach, target.mach, alpha),
     gForce: lerp(current.gForce, target.gForce, alpha),
     verticalSpeedFpm: lerp(current.verticalSpeedFpm, target.verticalSpeedFpm, alpha),
     angleOfAttackDeg: lerp(current.angleOfAttackDeg, target.angleOfAttackDeg, alpha),
     sideslipDeg: lerp(current.sideslipDeg, target.sideslipDeg, alpha),
+    windDirectionDeg: lerpHeading(current.windDirectionDeg, target.windDirectionDeg, alpha),
+    windVelocityKts: lerp(current.windVelocityKts, target.windVelocityKts, alpha),
   }
 }

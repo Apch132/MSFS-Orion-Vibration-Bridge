@@ -41,7 +41,36 @@ export type MountAppOptions = {
   bridge?: LauncherBridgeClient | null
 }
 
-const CONFIG_COLLAPSE_KEY = 'orion.launcher.configCollapsed'
+const PANEL_COLLAPSE_KEY = 'orion.launcher.panelsCollapsed'
+
+type PanelId = 'config' | 'telemetry' | 'hud'
+
+type CollapsedPanels = Record<PanelId, boolean>
+
+function loadCollapsed(): CollapsedPanels {
+  try {
+    const raw = localStorage.getItem(PANEL_COLLAPSE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<CollapsedPanels>
+      return {
+        config: Boolean(parsed.config),
+        telemetry: Boolean(parsed.telemetry),
+        hud: Boolean(parsed.hud),
+      }
+    }
+    // Migrate legacy single-panel key
+    if (localStorage.getItem('orion.launcher.configCollapsed') === '1') {
+      return { config: true, telemetry: false, hud: false }
+    }
+  } catch {
+    /* ignore */
+  }
+  return { config: false, telemetry: false, hud: false }
+}
+
+function panelToggleGlyph(collapsed: boolean): string {
+  return collapsed ? '>' : '<'
+}
 
 export async function mountApp(
   root: HTMLElement,
@@ -52,12 +81,9 @@ export async function mountApp(
   const bridge = options.bridge ?? null
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
-  let configCollapsed = false
-  try {
-    configCollapsed = localStorage.getItem(CONFIG_COLLAPSE_KEY) === '1'
-  } catch {
-    configCollapsed = false
-  }
+  let collapsed = loadCollapsed()
+  let sliderPointerDown = false
+  let engineCount = 0
 
   root.innerHTML = `
     <header class="titlebar" data-tauri-drag-region>
@@ -70,9 +96,6 @@ export async function mountApp(
       </div>
       <div class="titlebar-drag" data-tauri-drag-region title="Drag to move · double-click to maximize"></div>
       <div class="titlebar-center">
-        <button type="button" class="btn btn-ghost panel-toggle" id="btn-panel-toggle" title="Hide configuration panel" aria-pressed="false">
-          <span id="panel-toggle-glyph">&lt;</span>
-        </button>
         <div class="sim-pill" id="sim-pill" data-state="offline" title="SimConnect status from the shared bridge runtime">
           ${iconRadio(14)}
           <span class="sim-dot" aria-hidden="true"></span>
@@ -89,11 +112,28 @@ export async function mountApp(
       </div>
     </header>
 
-    <main class="layout" id="layout" data-config-collapsed="${configCollapsed ? 'true' : 'false'}">
+    <main class="layout" id="layout">
       <section class="panel panel-config" id="panel-config" aria-label="Configuration">
-        <div class="panel-header">${iconSliders(16)}<span class="label">Configuration</span></div>
+        <div class="panel-header">
+          ${iconSliders(16)}
+          <span class="label">Configuration</span>
+          <button type="button" class="btn btn-ghost panel-collapse" data-panel="config" title="Hide configuration" aria-pressed="false">
+            <span data-glyph>&lt;</span>
+          </button>
+        </div>
         <div class="panel-body">
-          <p class="intensity-hint">Sliders set the HID motor ceiling: 0% = 0, 50% ≈ 128, 100% = 255. Master scales the final sum.</p>
+          <div class="intensity-help" role="note">
+            <p>Les curseurs ne rendent pas un effet plus fréquent. Ils définissent uniquement sa puissance maximale.</p>
+            <p>Le moteur de vibration adapte automatiquement l’intensité selon la situation de vol.</p>
+            <ul>
+              <li>Train rentrant : faible vibration.</li>
+              <li>Atterrissage dur : vibration beaucoup plus forte.</li>
+              <li>Décrochage léger : vibration modérée.</li>
+              <li>Décrochage prononcé : vibration importante.</li>
+            </ul>
+            <p>Réduire un curseur limite uniquement la puissance maximale de cet effet. Le réglage Master agit sur l’ensemble des effets.</p>
+            <p class="intensity-help-scale">Échelle HID : 0 % = 0 · 50 % ≈ 128 · 100 % = 255</p>
+          </div>
           <div class="tabs" role="tablist" aria-label="Vibration profile">
             <button type="button" class="tab" role="tab" data-profile="aircraft" aria-selected="true">Aircraft</button>
             <button type="button" class="tab" role="tab" data-profile="helicopter" aria-selected="false">Helicopter</button>
@@ -115,15 +155,27 @@ export async function mountApp(
         </div>
       </section>
 
-      <section class="panel panel-telemetry" aria-label="SimConnect Telemetry">
-        <div class="panel-header">${iconActivity(16)}<span class="label">SimConnect Telemetry</span></div>
+      <section class="panel panel-telemetry" id="panel-telemetry" aria-label="SimConnect Telemetry">
+        <div class="panel-header">
+          ${iconActivity(16)}
+          <span class="label">SimConnect Telemetry</span>
+          <button type="button" class="btn btn-ghost panel-collapse" data-panel="telemetry" title="Hide telemetry" aria-pressed="false">
+            <span data-glyph>&lt;</span>
+          </button>
+        </div>
         <div class="panel-body panel-body-telemetry">
           ${telemetryPanelHtml()}
         </div>
       </section>
 
-      <section class="panel panel-hud" aria-label="Flight HUD">
-        <div class="panel-header">${iconGauge(16)}<span class="label">Flight HUD</span></div>
+      <section class="panel panel-hud" id="panel-hud" aria-label="Flight HUD">
+        <div class="panel-header">
+          ${iconGauge(16)}
+          <span class="label">Flight HUD</span>
+          <button type="button" class="btn btn-ghost panel-collapse" data-panel="hud" title="Hide HUD" aria-pressed="false">
+            <span data-glyph>&lt;</span>
+          </button>
+        </div>
         <div class="panel-body panel-body-hud">
           ${hudHtml()}
         </div>
@@ -137,8 +189,6 @@ export async function mountApp(
   `
 
   const layout = root.querySelector('#layout') as HTMLElement
-  const panelToggle = root.querySelector('#btn-panel-toggle') as HTMLButtonElement
-  const panelToggleGlyph = root.querySelector('#panel-toggle-glyph') as HTMLElement
   const effectList = root.querySelector('#effect-list') as HTMLElement
   const themeSelect = root.querySelector('#theme-select') as HTMLSelectElement
   const saveStatusEl = root.querySelector('#save-status') as HTMLElement
@@ -151,6 +201,7 @@ export async function mountApp(
   const btnMax = root.querySelector('#btn-win-max') as HTMLButtonElement
   const btnClose = root.querySelector('#btn-win-close') as HTMLButtonElement
   const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.tab'))
+  const collapseBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('.panel-collapse'))
   const tele = bindTelemetryPanel(root)
   const hud = bindHud(root)
 
@@ -162,33 +213,51 @@ export async function mountApp(
   let raf = 0
   let maximized = false
 
-  function syncPanelToggle(): void {
-    layout.dataset.configCollapsed = configCollapsed ? 'true' : 'false'
-    panelToggleGlyph.textContent = configCollapsed ? '>' : '<'
-    panelToggle.setAttribute('aria-pressed', configCollapsed ? 'true' : 'false')
-    panelToggle.title = configCollapsed
-      ? 'Show configuration panel'
-      : 'Hide configuration panel'
+  function persistCollapsed(): void {
     try {
-      localStorage.setItem(CONFIG_COLLAPSE_KEY, configCollapsed ? '1' : '0')
+      localStorage.setItem(PANEL_COLLAPSE_KEY, JSON.stringify(collapsed))
     } catch {
       /* ignore */
     }
+  }
+
+  function syncPanelCollapse(): void {
+    layout.dataset.configCollapsed = collapsed.config ? 'true' : 'false'
+    layout.dataset.telemetryCollapsed = collapsed.telemetry ? 'true' : 'false'
+    layout.dataset.hudCollapsed = collapsed.hud ? 'true' : 'false'
+
+    for (const btn of collapseBtns) {
+      const id = btn.dataset.panel as PanelId
+      const isCollapsed = collapsed[id]
+      const glyph = btn.querySelector('[data-glyph]')
+      if (glyph) glyph.textContent = panelToggleGlyph(isCollapsed)
+      btn.setAttribute('aria-pressed', isCollapsed ? 'true' : 'false')
+      const labels: Record<PanelId, string> = {
+        config: 'configuration',
+        telemetry: 'telemetry',
+        hud: 'HUD',
+      }
+      btn.title = isCollapsed ? `Show ${labels[id]}` : `Hide ${labels[id]}`
+    }
+    persistCollapsed()
+  }
+
+  function hidHint(key: EffectKey, intensity: number): string {
+    return key === 'master'
+      ? 'Final HID multiplier'
+      : `Ceiling ≈ ${Math.round((intensity / 100) * 255)} HID`
   }
 
   function renderEffects(current: LauncherPreferences): void {
     const profile = current.profiles[current.activeProfile]
     effectList.innerHTML = EFFECT_KEYS.map((key) => {
       const effect = profile[key]
-      const hidHint = key === 'master'
-        ? 'Final HID multiplier'
-        : `Ceiling ≈ ${Math.round((effect.intensity / 100) * 255)} HID`
       return `
         <div class="effect-card" data-effect="${key}">
           <div class="effect-row">
             <span class="effect-name">${EFFECT_LABELS[key]}</span>
-            <div style="display:flex;align-items:center;gap:10px">
-              <span class="effect-pct" title="${hidHint}">${Math.round(effect.intensity)}%</span>
+            <div class="effect-controls">
+              <span class="effect-pct" title="${hidHint(key, effect.intensity)}">${Math.round(effect.intensity)}%</span>
               <label class="switch" title="Enable ${EFFECT_LABELS[key]}">
                 <input type="checkbox" data-role="enabled" ${effect.enabled ? 'checked' : ''} />
                 <span></span>
@@ -204,21 +273,52 @@ export async function mountApp(
             data-role="intensity"
             value="${effect.intensity}"
             ${effect.enabled ? '' : 'disabled'}
-            title="${hidHint}"
+            title="${hidHint(key, effect.intensity)}"
           />
         </div>
       `
     }).join('')
   }
 
-  function syncChrome(current: LauncherPreferences): void {
+  /** Update labels/checkboxes without rebuilding range inputs (keeps drag fluid). */
+  function softSyncEffects(current: LauncherPreferences): void {
+    const profile = current.profiles[current.activeProfile]
+    for (const key of EFFECT_KEYS) {
+      const card = effectList.querySelector<HTMLElement>(`[data-effect="${key}"]`)
+      if (!card) continue
+      const effect = profile[key]
+      const pct = card.querySelector('.effect-pct')
+      const slider = card.querySelector<HTMLInputElement>('input[data-role="intensity"]')
+      const enabled = card.querySelector<HTMLInputElement>('input[data-role="enabled"]')
+      if (pct) {
+        pct.textContent = `${Math.round(effect.intensity)}%`
+        pct.setAttribute('title', hidHint(key, effect.intensity))
+      }
+      if (slider && document.activeElement !== slider) {
+        slider.value = String(effect.intensity)
+        slider.disabled = !effect.enabled
+        slider.title = hidHint(key, effect.intensity)
+      } else if (slider) {
+        slider.disabled = !effect.enabled
+      }
+      if (enabled && document.activeElement !== enabled) {
+        enabled.checked = effect.enabled
+      }
+    }
+  }
+
+  function syncChrome(current: LauncherPreferences, rebuildEffects = true): void {
     applyTheme(current.appearance.theme)
     themeSelect.value = current.appearance.theme
     for (const tab of tabs) {
       const selected = tab.dataset.profile === current.activeProfile
       tab.setAttribute('aria-selected', selected ? 'true' : 'false')
     }
-    renderEffects(current)
+    if (rebuildEffects && !sliderPointerDown) {
+      renderEffects(current)
+    } else {
+      softSyncEffects(current)
+    }
   }
 
   function setSaveStatus(status: SaveStatus): void {
@@ -265,6 +365,7 @@ export async function mountApp(
       resetFlightEvents(tele.timeline)
     }
     lastAircraftKey = key
+    engineCount = snap.aircraft.engineCount
     targetTelemetry = snap
     renderTelemetryCards(tele, snap)
     syncSimPillFromTelemetry(snap, bridge?.getState() ?? {
@@ -285,14 +386,17 @@ export async function mountApp(
         pitchDeg: target.flight.pitchDeg,
         bankDeg: target.flight.bankDeg,
         indicatedAirspeedKts: target.flight.indicatedAirspeedKts,
+        groundSpeedKts: target.flight.groundSpeedKts,
         altitudeFt: target.flight.altitudeFt,
         mach: target.flight.mach,
         gForce: target.flight.gForce,
         verticalSpeedFpm: target.flight.verticalSpeedFpm,
         angleOfAttackDeg: target.flight.angleOfAttackDeg,
         sideslipDeg: target.flight.sideslipDeg,
+        windDirectionDeg: target.flight.windDirectionDeg,
+        windVelocityKts: target.flight.windVelocityKts,
       }, 0.18)
-      renderControls(tele, smoothControls)
+      renderControls(tele, smoothControls, engineCount || target.aircraft.engineCount)
       const active = target.connection.simconnect === 'connected'
       drawHud(hud, smoothFlight, active, Boolean(target.stale))
     } else {
@@ -315,14 +419,17 @@ export async function mountApp(
     }
   }
 
-  syncPanelToggle()
+  syncPanelCollapse()
   syncChrome(prefs)
   setSaveStatus(controller.getSaveStatus())
-  if (targetTelemetry) renderTelemetryCards(tele, targetTelemetry)
+  if (targetTelemetry) {
+    engineCount = targetTelemetry.aircraft.engineCount
+    renderTelemetryCards(tele, targetTelemetry)
+  }
 
   controller.subscribe((next) => {
     prefs = next
-    syncChrome(next)
+    syncChrome(next, !sliderPointerDown)
     if (bridge?.isAvailable()) {
       void bridge.updatePreferences(next).catch((err) => {
         console.error('[launcher] bridge updatePreferences failed:', err)
@@ -331,10 +438,13 @@ export async function mountApp(
   })
   controller.subscribeStatus(setSaveStatus)
 
-  panelToggle.addEventListener('click', () => {
-    configCollapsed = !configCollapsed
-    syncPanelToggle()
-  })
+  for (const btn of collapseBtns) {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.panel as PanelId
+      collapsed = { ...collapsed, [id]: !collapsed[id] }
+      syncPanelCollapse()
+    })
+  }
 
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
@@ -358,6 +468,19 @@ export async function mountApp(
     void controller.resetPreferences()
   })
 
+  effectList.addEventListener('pointerdown', (event) => {
+    const target = event.target as HTMLElement
+    if (target.dataset?.role === 'intensity') sliderPointerDown = true
+  })
+  window.addEventListener('pointerup', () => {
+    if (!sliderPointerDown) return
+    sliderPointerDown = false
+    syncChrome(controller.getPreferences(), true)
+  })
+  window.addEventListener('pointercancel', () => {
+    sliderPointerDown = false
+  })
+
   effectList.addEventListener('input', (event) => {
     const target = event.target as HTMLInputElement
     if (target.dataset.role !== 'intensity') return
@@ -368,13 +491,9 @@ export async function mountApp(
     const pct = card?.querySelector('.effect-pct')
     if (pct) {
       pct.textContent = `${Math.round(intensity)}%`
-      pct.setAttribute(
-        'title',
-        key === 'master'
-          ? 'Final HID multiplier'
-          : `Ceiling ≈ ${Math.round((intensity / 100) * 255)} HID`,
-      )
+      pct.setAttribute('title', hidHint(key, intensity))
     }
+    target.title = hidHint(key, intensity)
 
     controller.updatePreferences((current) => {
       const active = current.activeProfile
