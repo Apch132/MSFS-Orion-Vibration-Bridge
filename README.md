@@ -11,10 +11,10 @@ It is a Windows utility with two front ends sharing the same future vibration co
 
 | | CLI | Desktop launcher |
 |--|-----|------------------|
-| Role | Run the vibration bridge | Configure profiles / themes; engine link later |
+| Role | Run the vibration bridge | Configure profiles / themes; Start/Stop shared bridge |
 | Feel curves | Built-in defaults from the shared core | Editable Aircraft / Helicopter profiles (local only) |
 | Preferences file | None | OS app data via Tauri Store (`launcher-preferences.json`) |
-| SimConnect / HID | Active today | **Not connected yet** in the launcher UI |
+| SimConnect / HID | Active via shared `createBridge()` | Same runtime via Node host (UI never talks to HID/SimConnect) |
 | Best for | VR, minimal footprint | Desktop tuning and future HUD |
 
 Launcher preferences live under the Windows app data directory for identifier `community.winwing.msfs2024-vibration-bridge` (managed by Tauri / the Store plugin). They are **never** read by the CLI and are not stored in the git repository.
@@ -40,7 +40,7 @@ Typecheck:
 npm run typecheck:launcher
 ```
 
-**Current launcher status:** preferences load/validate/autosave/reset work; Configuration column is interactive; Telemetry and HUD panels are structural placeholders; Start/Stop is disabled until the vibration engine is linked.
+**Current launcher status:** preferences load/validate/autosave/reset work; Start/Stop drives the **shared bridge runtime** (same engine as the CLI) through a Node host process; Telemetry and HUD panels remain structural placeholders without live SimVar tables.
 
 ## Project status
 
@@ -142,11 +142,11 @@ If hardware is plugged in later, the bridge periodically re-scans and opens newl
 
 - Windows only
 - Only the listed USB PIDs / grip combinations are supported
-- Intensities and curves are hard-coded in the **CLI**; the launcher stores editable profiles locally but does not drive motors yet
+- Desktop launcher Start/Stop requires **Node.js on PATH** to spawn the shared bridge host
+- Telemetry / HUD panels are not yet populated with live SimVar tables
 - Release binaries are unsigned
 - Effect quality depends on SimVars each aircraft publishes
 - Third-party aircraft may omit or mishandle some variables
-- Desktop launcher does not yet connect SimConnect, HID, or the vibration engine
 
 Experimental HID research scripts live under `tools/hardware-research/` and are not required to run the bridge.
 

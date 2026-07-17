@@ -146,6 +146,11 @@ body {
   background: var(--warn);
 }
 
+.sim-pill[data-state='online'] .sim-dot {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
 .layout {
   flex: 1;
   min-height: 0;

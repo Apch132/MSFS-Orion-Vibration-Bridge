@@ -1,4 +1,5 @@
 import './styles.css'
+import { LauncherBridgeClient } from './bridge-client'
 import {
   PreferencesController,
   MemoryPreferencesStorage,
@@ -19,7 +20,17 @@ async function boot(): Promise<void> {
 
   const controller = new PreferencesController(storage)
   await controller.loadPreferences()
-  await mountApp(root as HTMLElement, controller)
+
+  const bridge = new LauncherBridgeClient()
+  if (isTauri) {
+    try {
+      await bridge.connect()
+    } catch (err) {
+      console.error('[launcher] bridge host unavailable:', err)
+    }
+  }
+
+  await mountApp(root as HTMLElement, controller, { bridge })
 
   if (isTauri) {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
@@ -28,6 +39,7 @@ async function boot(): Promise<void> {
       event.preventDefault()
       try {
         await controller.flushPendingSave()
+        await bridge.dispose()
       } finally {
         await win.destroy()
       }

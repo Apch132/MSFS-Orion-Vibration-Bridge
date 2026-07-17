@@ -1,3 +1,4 @@
+import type { LauncherBridgeClient, BridgeRuntimeState } from '../bridge-client'
 import { PreferencesController } from '../preferences'
 import {
   EFFECT_KEYS,
@@ -19,11 +20,17 @@ function applyTheme(theme: ThemePreference): void {
   document.documentElement.setAttribute('data-theme', resolveTheme(theme))
 }
 
+export type MountAppOptions = {
+  bridge?: LauncherBridgeClient | null
+}
+
 export async function mountApp(
   root: HTMLElement,
   controller: PreferencesController,
+  options: MountAppOptions = {},
 ): Promise<void> {
   let prefs = controller.getPreferences()
+  const bridge = options.bridge ?? null
 
   root.innerHTML = `
     <header class="topbar">
@@ -34,13 +41,13 @@ export async function mountApp(
           <div class="brand-sub">Desktop launcher</div>
         </div>
       </div>
-      <div class="sim-pill" data-state="offline" title="SimConnect is not connected in this build">
+      <div class="sim-pill" id="sim-pill" data-state="offline" title="SimConnect status from the shared bridge runtime">
         ${iconRadio(14)}
         <span class="sim-dot" aria-hidden="true"></span>
-        <span>SimConnect · Not connected</span>
+        <span id="sim-label">SimConnect · Not connected</span>
       </div>
       <div class="actions">
-        <button type="button" class="btn btn-primary" id="btn-engine" disabled title="Vibration engine wiring comes in a later task">
+        <button type="button" class="btn btn-primary" id="btn-engine" ${bridge?.isAvailable() ? '' : 'disabled'} title="${bridge?.isAvailable() ? 'Start or stop the shared vibration bridge' : 'Bridge runtime requires the Tauri desktop app'}">
           Start
         </button>
       </div>
@@ -77,7 +84,7 @@ export async function mountApp(
           <div class="placeholder">
             <strong>Telemetry panel</strong>
             <span>Live SimVars will appear here in a later release. No simulated flight data is shown.</span>
-            <code>Status: not initialized</code>
+            <code id="telemetry-status">Status: bridge idle</code>
           </div>
         </div>
       </section>
@@ -87,8 +94,8 @@ export async function mountApp(
         <div class="panel-body">
           <div class="placeholder">
             <strong>Flight HUD</strong>
-            <span>Structured HUD layout reserved for a later task. Vibration engine remains CLI-only for now.</span>
-            <code>${iconPlane(14)} Engine bridge: not linked</code>
+            <span>Structured HUD layout reserved for a later task.</span>
+            <code id="engine-status">${iconPlane(14)} Engine bridge: ${bridge?.isAvailable() ? 'ready' : 'unavailable in browser preview'}</code>
           </div>
         </div>
       </section>
@@ -96,7 +103,7 @@ export async function mountApp(
 
     <footer class="statusbar">
       <span class="save-status" id="save-status" data-status="Saved">Saved</span>
-      <span class="brand-sub">Preferences stored in the OS app data directory</span>
+      <span class="brand-sub" id="bridge-footer">Preferences stored in the OS app data directory</span>
     </footer>
   `
 
@@ -104,6 +111,12 @@ export async function mountApp(
   const themeSelect = root.querySelector('#theme-select') as HTMLSelectElement
   const saveStatusEl = root.querySelector('#save-status') as HTMLElement
   const resetBtn = root.querySelector('#btn-reset') as HTMLButtonElement
+  const engineBtn = root.querySelector('#btn-engine') as HTMLButtonElement
+  const simPill = root.querySelector('#sim-pill') as HTMLElement
+  const simLabel = root.querySelector('#sim-label') as HTMLElement
+  const telemetryStatus = root.querySelector('#telemetry-status') as HTMLElement
+  const engineStatus = root.querySelector('#engine-status') as HTMLElement
+  const bridgeFooter = root.querySelector('#bridge-footer') as HTMLElement
   const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.tab'))
 
   function renderEffects(current: LauncherPreferences): void {
@@ -152,12 +165,38 @@ export async function mountApp(
     saveStatusEl.dataset.status = status
   }
 
+  function syncBridgeUi(state: BridgeRuntimeState): void {
+    const running = state.status === 'running' || state.status === 'starting'
+    engineBtn.textContent = running ? 'Stop' : 'Start'
+    engineBtn.disabled = !bridge?.isAvailable() || state.status === 'starting' || state.status === 'stopping'
+
+    if (state.simConnected) {
+      simPill.dataset.state = 'online'
+      simLabel.textContent = `SimConnect · ${state.simApplicationName || 'Connected'}`
+    } else {
+      simPill.dataset.state = 'offline'
+      simLabel.textContent = running ? 'SimConnect · Waiting…' : 'SimConnect · Not connected'
+    }
+
+    telemetryStatus.textContent = `Status: bridge ${state.status}` +
+      (state.hidOpenCount ? ` · HID ${state.hidOpenCount}` : '')
+    engineStatus.innerHTML = `${iconPlane(14)} Engine bridge: ${state.status}`
+    bridgeFooter.textContent = running
+      ? 'Bridge running — preference changes apply live'
+      : 'Preferences stored in the OS app data directory'
+  }
+
   syncChrome(prefs)
   setSaveStatus(controller.getSaveStatus())
 
   controller.subscribe((next) => {
     prefs = next
     syncChrome(next)
+    if (bridge?.isAvailable()) {
+      void bridge.updatePreferences(next).catch((err) => {
+        console.error('[launcher] bridge updatePreferences failed:', err)
+      })
+    }
   })
   controller.subscribeStatus(setSaveStatus)
 
@@ -235,6 +274,27 @@ export async function mountApp(
       }
     })
   })
+
+  engineBtn.addEventListener('click', () => {
+    if (!bridge?.isAvailable()) return
+    const state = bridge.getState()
+    const running = state.status === 'running' || state.status === 'starting'
+    engineBtn.disabled = true
+    const action = running
+      ? bridge.stop()
+      : bridge.start(controller.getPreferences())
+    void action.catch((err) => {
+      console.error('[launcher] bridge start/stop failed:', err)
+      bridgeFooter.textContent = `Bridge error: ${err instanceof Error ? err.message : String(err)}`
+    })
+  })
+
+  if (bridge) {
+    bridge.onState(syncBridgeUi)
+    bridge.onError((message) => {
+      bridgeFooter.textContent = `Bridge error: ${message}`
+    })
+  }
 
   window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
     if (prefs.appearance.theme === 'system') applyTheme('system')
