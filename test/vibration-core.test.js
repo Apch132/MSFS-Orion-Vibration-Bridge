@@ -32,12 +32,15 @@ test('buildVibPacket is exactly 14 bytes with command layout', () => {
   ])
 })
 
-test('intensityToHidByte clamps 0–100 then scales to 0–255', () => {
+test('intensityToHidByte clamps HID bytes to 0..255 (never 256)', () => {
   assert.strictEqual(intensityToHidByte(0), 0)
-  assert.strictEqual(intensityToHidByte(100), 255)
-  assert.strictEqual(intensityToHidByte(50), Math.round(50 * 2.55)) // 127 under IEEE float
+  assert.strictEqual(intensityToHidByte(255), 255)
+  assert.strictEqual(intensityToHidByte(128), 128)
+  assert.strictEqual(intensityToHidByte(127.4), 127)
+  assert.strictEqual(intensityToHidByte(127.6), 128)
   assert.strictEqual(intensityToHidByte(-10), 0)
-  assert.strictEqual(intensityToHidByte(150), 255)
+  assert.strictEqual(intensityToHidByte(256), 255)
+  assert.strictEqual(intensityToHidByte(300), 255)
   assert.strictEqual(intensityToHidByte(NaN), 0)
   assert.strictEqual(intensityToHidByte(undefined), 0)
 })
@@ -57,8 +60,8 @@ test('engine RPM helpers use per-engine values and reject invalid telemetry', ()
   assert.strictEqual(pistonTurbopropEngineFx(100, true, false), 0)
   assert.strictEqual(pistonTurbopropEngineFx(2700, false, false), 0)
   assert.strictEqual(pistonTurbopropEngineFx(NaN, true, false), 0)
-  assert.strictEqual(jetEngineRpmFx(10000, true), 8)
-  assert.strictEqual(jetEngineRpmFx(5000, true), 4)
+  assert.strictEqual(jetEngineRpmFx(10000, true), 1)
+  assert.strictEqual(jetEngineRpmFx(5000, true), 0.5)
   assert.strictEqual(jetEngineRpmFx(NaN, true), 0)
   assert.strictEqual(jetEngineRpmFx(10000, false), 0)
 
@@ -93,7 +96,7 @@ test('touchdown uses last airborne vertical speed and wall-clock decay', () => {
   r = updateTouchdown(td, { onGround: 1, vertSpeedFpm: 0 }, t0 + 30)
   assert.strictEqual(r.triggered, true)
   assert.strictEqual(r.sinkFpm, -600)
-  assert.strictEqual(r.intensity, Math.min(100, 600 / 6))
+  assert.strictEqual(r.intensity, Math.min(1, 600 / 600))
 
   const mid = updateTouchdown(td, { onGround: 1, vertSpeedFpm: 0 }, t0 + 30 + TOUCHDOWN_DURATION_MS / 2)
   const expectedMid =

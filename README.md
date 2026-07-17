@@ -98,7 +98,24 @@ This program does not send flight data over the Internet. It only uses local Sim
 
 ## Current effects
 
-Effects are a **haptic interpretation** of available SimVars, not certified flight fidelity:
+Effects are a **haptic interpretation** of available SimVars, not certified flight fidelity.
+
+**Intensity sliders (launcher)** map to the real HID motor byte:
+
+| Slider | HID byte |
+|--------|----------|
+| 0% | 0 |
+| 50% | ≈128 |
+| 100% | 255 |
+
+Each effect keeps its trigger conditions and 0..1 dynamic curve. The slider is that effect’s hardware ceiling. **Master** multiplies the summed contribution last, then the value is clamped to `0..255` (never 256).
+
+```text
+effectOutput = dynamicFactor × (effectSlider / 100) × 255
+finalOutput  = clamp(sum(activeEffects) × (master / 100), 0, 255)
+```
+
+Effects include:
 
 - Engine RPM per engine (piston / turboprop / jet)
 - Afterburner per engine (where SimVars are present)

@@ -5,6 +5,11 @@ export type ActiveProfile = 'aircraft' | 'helicopter'
 
 export type EffectSettings = {
   enabled: boolean
+  /**
+   * Hardware ceiling for this effect, 0..100%.
+   * 0 → HID 0, 50 → ~128, 100 → HID 255 (when the dynamic factor is 1).
+   * Master multiplies the summed HID contribution last.
+   */
   intensity: number
 }
 
@@ -47,7 +52,7 @@ export const EFFECT_KEYS: EffectKey[] = [
 ]
 
 export const EFFECT_LABELS: Record<EffectKey, string> = {
-  master: 'Master',
+  master: 'Master (global)',
   engine: 'Engine',
   afterburner: 'Afterburner',
   gear: 'Gear',

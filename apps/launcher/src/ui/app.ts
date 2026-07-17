@@ -26,6 +26,7 @@ import {
   resetFlightEvents,
   telemetryPanelHtml,
 } from './telemetry-panel'
+import { iconClose, iconMaximize, iconMinimize, iconRestore } from './window-chrome'
 
 function resolveTheme(theme: ThemePreference): Exclude<ThemePreference, 'system'> {
   if (theme !== 'system') return theme
@@ -40,6 +41,8 @@ export type MountAppOptions = {
   bridge?: LauncherBridgeClient | null
 }
 
+const CONFIG_COLLAPSE_KEY = 'orion.launcher.configCollapsed'
+
 export async function mountApp(
   root: HTMLElement,
   controller: PreferencesController,
@@ -47,32 +50,50 @@ export async function mountApp(
 ): Promise<void> {
   let prefs = controller.getPreferences()
   const bridge = options.bridge ?? null
+  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+
+  let configCollapsed = false
+  try {
+    configCollapsed = localStorage.getItem(CONFIG_COLLAPSE_KEY) === '1'
+  } catch {
+    configCollapsed = false
+  }
 
   root.innerHTML = `
-    <header class="topbar">
-      <div class="brand">
+    <header class="titlebar" data-tauri-drag-region>
+      <div class="titlebar-brand" data-tauri-drag-region>
         <div class="brand-mark" aria-hidden="true"></div>
-        <div>
-          <div>WinWing MSFS Vibration Bridge</div>
+        <div class="titlebar-titles" data-tauri-drag-region>
+          <div class="titlebar-name">WinWing MSFS Vibration Bridge</div>
           <div class="brand-sub">Desktop launcher</div>
         </div>
       </div>
-      <div class="sim-pill" id="sim-pill" data-state="offline" title="SimConnect status from the shared bridge runtime">
-        ${iconRadio(14)}
-        <span class="sim-dot" aria-hidden="true"></span>
-        <span id="sim-label">SimConnect · Disconnected</span>
-      </div>
-      <div class="actions">
+      <div class="titlebar-drag" data-tauri-drag-region title="Drag to move · double-click to maximize"></div>
+      <div class="titlebar-center">
+        <button type="button" class="btn btn-ghost panel-toggle" id="btn-panel-toggle" title="Hide configuration panel" aria-pressed="false">
+          <span id="panel-toggle-glyph">&lt;</span>
+        </button>
+        <div class="sim-pill" id="sim-pill" data-state="offline" title="SimConnect status from the shared bridge runtime">
+          ${iconRadio(14)}
+          <span class="sim-dot" aria-hidden="true"></span>
+          <span id="sim-label">SimConnect · Disconnected</span>
+        </div>
         <button type="button" class="btn btn-primary" id="btn-engine" ${bridge?.isAvailable() ? '' : 'disabled'} title="${bridge?.isAvailable() ? 'Start or stop the shared vibration bridge' : 'Bridge runtime requires the Tauri desktop app'}">
           Start
         </button>
       </div>
+      <div class="window-controls" role="group" aria-label="Window">
+        <button type="button" class="win-btn" id="btn-win-min" title="Minimize" aria-label="Minimize">${iconMinimize()}</button>
+        <button type="button" class="win-btn" id="btn-win-max" title="Maximize" aria-label="Maximize">${iconMaximize()}</button>
+        <button type="button" class="win-btn win-btn-close" id="btn-win-close" title="Close" aria-label="Close">${iconClose()}</button>
+      </div>
     </header>
 
-    <main class="layout">
-      <section class="panel" aria-label="Configuration">
+    <main class="layout" id="layout" data-config-collapsed="${configCollapsed ? 'true' : 'false'}">
+      <section class="panel panel-config" id="panel-config" aria-label="Configuration">
         <div class="panel-header">${iconSliders(16)}<span class="label">Configuration</span></div>
         <div class="panel-body">
+          <p class="intensity-hint">Sliders set the HID motor ceiling: 0% = 0, 50% ≈ 128, 100% = 255. Master scales the final sum.</p>
           <div class="tabs" role="tablist" aria-label="Vibration profile">
             <button type="button" class="tab" role="tab" data-profile="aircraft" aria-selected="true">Aircraft</button>
             <button type="button" class="tab" role="tab" data-profile="helicopter" aria-selected="false">Helicopter</button>
@@ -94,14 +115,14 @@ export async function mountApp(
         </div>
       </section>
 
-      <section class="panel" aria-label="SimConnect Telemetry">
+      <section class="panel panel-telemetry" aria-label="SimConnect Telemetry">
         <div class="panel-header">${iconActivity(16)}<span class="label">SimConnect Telemetry</span></div>
         <div class="panel-body panel-body-telemetry">
           ${telemetryPanelHtml()}
         </div>
       </section>
 
-      <section class="panel" aria-label="Flight HUD">
+      <section class="panel panel-hud" aria-label="Flight HUD">
         <div class="panel-header">${iconGauge(16)}<span class="label">Flight HUD</span></div>
         <div class="panel-body panel-body-hud">
           ${hudHtml()}
@@ -115,6 +136,9 @@ export async function mountApp(
     </footer>
   `
 
+  const layout = root.querySelector('#layout') as HTMLElement
+  const panelToggle = root.querySelector('#btn-panel-toggle') as HTMLButtonElement
+  const panelToggleGlyph = root.querySelector('#panel-toggle-glyph') as HTMLElement
   const effectList = root.querySelector('#effect-list') as HTMLElement
   const themeSelect = root.querySelector('#theme-select') as HTMLSelectElement
   const saveStatusEl = root.querySelector('#save-status') as HTMLElement
@@ -123,6 +147,9 @@ export async function mountApp(
   const simPill = root.querySelector('#sim-pill') as HTMLElement
   const simLabel = root.querySelector('#sim-label') as HTMLElement
   const bridgeFooter = root.querySelector('#bridge-footer') as HTMLElement
+  const btnMin = root.querySelector('#btn-win-min') as HTMLButtonElement
+  const btnMax = root.querySelector('#btn-win-max') as HTMLButtonElement
+  const btnClose = root.querySelector('#btn-win-close') as HTMLButtonElement
   const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.tab'))
   const tele = bindTelemetryPanel(root)
   const hud = bindHud(root)
@@ -133,17 +160,35 @@ export async function mountApp(
   let eventSession = 0
   let lastAircraftKey = ''
   let raf = 0
+  let maximized = false
+
+  function syncPanelToggle(): void {
+    layout.dataset.configCollapsed = configCollapsed ? 'true' : 'false'
+    panelToggleGlyph.textContent = configCollapsed ? '>' : '<'
+    panelToggle.setAttribute('aria-pressed', configCollapsed ? 'true' : 'false')
+    panelToggle.title = configCollapsed
+      ? 'Show configuration panel'
+      : 'Hide configuration panel'
+    try {
+      localStorage.setItem(CONFIG_COLLAPSE_KEY, configCollapsed ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }
 
   function renderEffects(current: LauncherPreferences): void {
     const profile = current.profiles[current.activeProfile]
     effectList.innerHTML = EFFECT_KEYS.map((key) => {
       const effect = profile[key]
+      const hidHint = key === 'master'
+        ? 'Final HID multiplier'
+        : `Ceiling ≈ ${Math.round((effect.intensity / 100) * 255)} HID`
       return `
         <div class="effect-card" data-effect="${key}">
           <div class="effect-row">
             <span class="effect-name">${EFFECT_LABELS[key]}</span>
             <div style="display:flex;align-items:center;gap:10px">
-              <span class="effect-pct">${Math.round(effect.intensity)}%</span>
+              <span class="effect-pct" title="${hidHint}">${Math.round(effect.intensity)}%</span>
               <label class="switch" title="Enable ${EFFECT_LABELS[key]}">
                 <input type="checkbox" data-role="enabled" ${effect.enabled ? 'checked' : ''} />
                 <span></span>
@@ -159,6 +204,7 @@ export async function mountApp(
             data-role="intensity"
             value="${effect.intensity}"
             ${effect.enabled ? '' : 'disabled'}
+            title="${hidHint}"
           />
         </div>
       `
@@ -255,6 +301,21 @@ export async function mountApp(
     raf = requestAnimationFrame(tick)
   }
 
+  async function syncMaximizedState(): Promise<void> {
+    if (!isTauri) return
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      maximized = await getCurrentWindow().isMaximized()
+      btnMax.innerHTML = maximized ? iconRestore() : iconMaximize()
+      btnMax.title = maximized ? 'Restore' : 'Maximize'
+      btnMax.setAttribute('aria-label', maximized ? 'Restore' : 'Maximize')
+      root.classList.toggle('is-maximized', maximized)
+    } catch {
+      /* preview */
+    }
+  }
+
+  syncPanelToggle()
   syncChrome(prefs)
   setSaveStatus(controller.getSaveStatus())
   if (targetTelemetry) renderTelemetryCards(tele, targetTelemetry)
@@ -269,6 +330,11 @@ export async function mountApp(
     }
   })
   controller.subscribeStatus(setSaveStatus)
+
+  panelToggle.addEventListener('click', () => {
+    configCollapsed = !configCollapsed
+    syncPanelToggle()
+  })
 
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
@@ -300,7 +366,15 @@ export async function mountApp(
     if (!key) return
     const intensity = Number(target.value)
     const pct = card?.querySelector('.effect-pct')
-    if (pct) pct.textContent = `${Math.round(intensity)}%`
+    if (pct) {
+      pct.textContent = `${Math.round(intensity)}%`
+      pct.setAttribute(
+        'title',
+        key === 'master'
+          ? 'Final HID multiplier'
+          : `Ceiling ≈ ${Math.round((intensity / 100) * 255)} HID`,
+      )
+    }
 
     controller.updatePreferences((current) => {
       const active = current.activeProfile
@@ -363,6 +437,39 @@ export async function mountApp(
       bridgeFooter.textContent = `Bridge error: ${err instanceof Error ? err.message : String(err)}`
     })
   })
+
+  if (isTauri) {
+    void (async () => {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      const win = getCurrentWindow()
+      await syncMaximizedState()
+
+      btnMin.addEventListener('click', () => {
+        void win.minimize()
+      })
+      btnMax.addEventListener('click', async () => {
+        await win.toggleMaximize()
+        await syncMaximizedState()
+      })
+      btnClose.addEventListener('click', () => {
+        void win.close()
+      })
+
+      const drag = root.querySelector('.titlebar-drag') as HTMLElement
+      drag.addEventListener('dblclick', async () => {
+        await win.toggleMaximize()
+        await syncMaximizedState()
+      })
+
+      await win.onResized(() => {
+        void syncMaximizedState()
+      })
+    })()
+  } else {
+    btnMin.disabled = true
+    btnMax.disabled = true
+    btnClose.disabled = true
+  }
 
   const unsubs: Array<() => void> = []
   if (bridge) {
