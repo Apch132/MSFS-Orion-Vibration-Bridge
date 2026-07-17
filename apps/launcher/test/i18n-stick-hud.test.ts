@@ -41,6 +41,8 @@ describe('i18n', () => {
     assert.equal(fr.bridge.start, 'Démarrer')
     assert.ok(fr.config.helpLead.includes('curseurs'))
     assert.equal(formatMessage(en.config.ceilingHint, { n: 128 }), 'Ceiling ≈ 128 HID')
+    assert.ok(en.panels.resize.length > 0)
+    assert.ok(fr.panels.resizeHint.includes('double-clic'))
   })
 
   it('persists locale preference', async () => {

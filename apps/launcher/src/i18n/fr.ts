@@ -41,6 +41,8 @@ export const fr: MessageTree = {
     hide: 'Masquer',
     allHiddenTitle: 'Tous les panneaux sont masqués.',
     allHiddenHint: 'Utilisez les boutons à gauche pour afficher Configuration ou Vol.',
+    resize: 'Redimensionner les panneaux',
+    resizeHint: 'Glisser pour redimensionner · double-clic pour réinitialiser',
   },
   config: {
     helpLead: 'Les curseurs ne rendent pas un effet plus fréquent. Ils définissent uniquement sa puissance maximale.',

@@ -187,8 +187,8 @@ export async function mountApp(
             id="panel-splitter"
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize panels"
-            title="Drag to resize · double-click to reset"
+            aria-label="${messages.panels.resize}"
+            title="${messages.panels.resizeHint}"
           >
             <span class="panel-splitter-grip" aria-hidden="true"></span>
           </div>
@@ -255,6 +255,10 @@ export async function mountApp(
   let lastSaveStatus: SaveStatus = controller.getSaveStatus()
   let splitterDragging = false
   const DEFAULT_CONFIG_WIDTH = 360
+  const MIN_CONFIG_WIDTH = 240
+  const MAX_CONFIG_WIDTH = 520
+  const MIN_FLIGHT_WIDTH = 200
+  const SPLITTER_WIDTH = 8
 
   function persistCollapsed(): void {
     try {
@@ -264,8 +268,18 @@ export async function mountApp(
     }
   }
 
+  function clampConfigWidth(widthPx: number): number {
+    const row = root.querySelector('#panels-row') as HTMLElement | null
+    const rowW = row?.clientWidth ?? 0
+    let max = MAX_CONFIG_WIDTH
+    if (rowW > 0) {
+      max = Math.min(MAX_CONFIG_WIDTH, Math.max(MIN_CONFIG_WIDTH, rowW - SPLITTER_WIDTH - MIN_FLIGHT_WIDTH))
+    }
+    return Math.min(max, Math.max(MIN_CONFIG_WIDTH, Math.round(widthPx)))
+  }
+
   function applyConfigWidth(widthPx: number): void {
-    const w = Math.min(520, Math.max(240, Math.round(widthPx)))
+    const w = clampConfigWidth(widthPx)
     panelConfig.style.flex = `0 0 ${w}px`
     panelConfig.style.maxWidth = `${w}px`
     panelConfig.style.width = `${w}px`
@@ -275,6 +289,7 @@ export async function mountApp(
     layout = root.querySelector('#layout') as HTMLElement
     panelsEmpty = root.querySelector('#panels-empty') as HTMLElement
     panelConfig = root.querySelector('#panel-config') as HTMLElement
+    const panelFlight = root.querySelector('#panel-flight') as HTMLElement
     panelSplitter = root.querySelector('#panel-splitter') as HTMLElement
     collapseBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('.panel-rail-btn'))
 
@@ -284,6 +299,13 @@ export async function mountApp(
     const allHidden = collapsed.config && collapsed.flight
     layout.dataset.allCollapsed = allHidden ? 'true' : 'false'
     if (panelsEmpty) panelsEmpty.hidden = !allHidden
+
+    if (panelConfig) {
+      panelConfig.setAttribute('aria-hidden', collapsed.config ? 'true' : 'false')
+    }
+    if (panelFlight) {
+      panelFlight.setAttribute('aria-hidden', collapsed.flight ? 'true' : 'false')
+    }
 
     // Hide splitter when either panel is collapsed (nothing to resize).
     const splitterHidden = collapsed.config || collapsed.flight
@@ -564,12 +586,13 @@ export async function mountApp(
         panelSplitter.removeEventListener('pointermove', onMove)
         panelSplitter.removeEventListener('pointerup', onUp)
         panelSplitter.removeEventListener('pointercancel', onUp)
-        const width = Math.round(panelConfig.getBoundingClientRect().width)
+        const width = clampConfigWidth(panelConfig.getBoundingClientRect().width)
+        applyConfigWidth(width)
         controller.updatePreferences((current) => ({
           ...current,
           appearance: {
             ...current.appearance,
-            configPanelWidthPx: Math.min(520, Math.max(240, width)),
+            configPanelWidthPx: width,
           },
         }))
       }
@@ -579,6 +602,7 @@ export async function mountApp(
     })
 
     panelSplitter.addEventListener('dblclick', () => {
+      if (collapsed.config || collapsed.flight) return
       applyConfigWidth(DEFAULT_CONFIG_WIDTH)
       controller.updatePreferences((current) => ({
         ...current,
@@ -737,12 +761,24 @@ export async function mountApp(
 
         await win.onResized(() => {
           void syncMaximizedState()
+          if (!collapsed.config && !collapsed.flight) {
+            applyConfigWidth(prefs.appearance.configPanelWidthPx || DEFAULT_CONFIG_WIDTH)
+          } else {
+            syncPanelCollapse()
+          }
         })
       })()
     } else {
       btnMin.disabled = true
       btnMax.disabled = true
       btnClose.disabled = true
+      window.addEventListener('resize', () => {
+        if (!collapsed.config && !collapsed.flight) {
+          applyConfigWidth(prefs.appearance.configPanelWidthPx || DEFAULT_CONFIG_WIDTH)
+        } else {
+          syncPanelCollapse()
+        }
+      })
     }
   }
 

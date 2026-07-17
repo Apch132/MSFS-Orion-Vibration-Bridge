@@ -305,10 +305,17 @@ body {
   min-width: 0;
   min-height: 0;
   display: flex;
+  flex-direction: row;
   gap: 12px;
   padding: 12px;
   overflow: hidden;
   position: relative;
+}
+
+/* No leftover flex gap when a panel is width-collapsed to 0. */
+.layout[data-config-collapsed='true'] .panels-row,
+.layout[data-flight-collapsed='true'] .panels-row {
+  gap: 0;
 }
 
 .panels-empty {
@@ -416,12 +423,14 @@ body {
   width: 0 !important;
   max-width: 0 !important;
   min-width: 0 !important;
+  max-height: none !important;
   opacity: 0;
-  margin: 0;
-  padding: 0;
-  border-width: 0;
-  overflow: hidden;
-  pointer-events: none;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-width: 0 !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
 }
 
 .layout[data-config-collapsed='true'] .panel-flight {
@@ -431,7 +440,8 @@ body {
   width: auto !important;
   opacity: 1;
   pointer-events: auto;
-  border-width: 1px;
+  border-width: 1px !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
 }
 
 .layout[data-flight-collapsed='true'] .panel-config {
@@ -441,7 +451,8 @@ body {
   width: auto !important;
   opacity: 1;
   pointer-events: auto;
-  border-width: 1px;
+  border-width: 1px !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
 }
 
 .panel-body-flight {
@@ -1096,34 +1107,19 @@ select {
 }
 
 @media (max-width: 980px) {
+  /* Keep horizontal panel strip — collapse must stay lateral, never vertical. */
   .layout {
     flex-direction: row;
     overflow: hidden;
   }
 
   .panels-row {
-    flex-direction: column;
-    overflow: auto;
-  }
-
-  .panel,
-  .panel-config,
-  .panel-flight {
-    min-height: 0;
-    max-width: none;
-    flex: 1 1 auto;
-    align-self: stretch;
+    flex-direction: row;
+    overflow: hidden;
   }
 
   .panel-body-flight {
     max-height: none;
-  }
-
-  .layout[data-config-collapsed='true'] .panel-config,
-  .layout[data-flight-collapsed='true'] .panel-flight {
-    min-height: 0;
-    max-height: 0;
-    flex-basis: 0;
   }
 
   .titlebar-name {

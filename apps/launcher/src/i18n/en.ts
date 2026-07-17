@@ -42,6 +42,8 @@ export type MessageTree = {
     hide: string
     allHiddenTitle: string
     allHiddenHint: string
+    resize: string
+    resizeHint: string
   }
   config: {
     helpLead: string
@@ -163,6 +165,8 @@ export const en: MessageTree = {
     hide: 'Hide',
     allHiddenTitle: 'All panels are hidden.',
     allHiddenHint: 'Use the buttons on the left to show Configuration or Flight.',
+    resize: 'Resize panels',
+    resizeHint: 'Drag to resize · double-click to reset',
   },
   config: {
     helpLead: 'Sliders do not make an effect more frequent. They only set its maximum power.',
