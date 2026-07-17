@@ -355,38 +355,93 @@ body {
 }
 
 .panel-config {
-  flex: 0 1 360px;
-  max-width: 400px;
+  flex: 0 0 360px;
+  max-width: 520px;
+  min-width: 0;
   align-self: stretch;
 }
 
 .panel-flight {
   flex: 1 1 420px;
   max-width: none;
-  align-self: flex-start;
+  align-self: stretch;
   max-height: 100%;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 200px;
+}
+
+.panel-splitter {
+  flex: 0 0 8px;
+  align-self: stretch;
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 -2px;
+}
+
+.panel-splitter[hidden] {
+  display: none;
+}
+
+.panel-splitter-grip {
+  width: 3px;
+  height: 36px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-strong) 80%, var(--accent) 20%);
+  transition: background 0.15s ease, height 0.15s ease;
+}
+
+.panel-splitter:hover .panel-splitter-grip,
+.panel-splitter.is-dragging .panel-splitter-grip {
+  background: var(--accent);
+  height: 48px;
+}
+
+.panel-splitter.is-dragging {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .layout[data-config-collapsed='true'] .panel-config,
 .layout[data-flight-collapsed='true'] .panel-flight {
-  flex-grow: 0;
-  flex-shrink: 0;
-  flex-basis: 0;
-  max-width: 0;
-  min-width: 0;
+  flex: 0 0 0 !important;
+  flex-grow: 0 !important;
+  flex-shrink: 0 !important;
+  flex-basis: 0 !important;
+  width: 0 !important;
+  max-width: 0 !important;
+  min-width: 0 !important;
   opacity: 0;
   margin: 0;
   padding: 0;
   border-width: 0;
+  overflow: hidden;
   pointer-events: none;
 }
 
 .layout[data-config-collapsed='true'] .panel-flight {
-  max-width: none;
-  flex: 1 1 auto;
+  max-width: none !important;
+  flex: 1 1 auto !important;
+  min-width: 200px !important;
+  width: auto !important;
+  opacity: 1;
+  pointer-events: auto;
+  border-width: 1px;
+}
+
+.layout[data-flight-collapsed='true'] .panel-config {
+  max-width: none !important;
+  flex: 1 1 auto !important;
+  min-width: 240px !important;
+  width: auto !important;
+  opacity: 1;
+  pointer-events: auto;
+  border-width: 1px;
 }
 
 .panel-body-flight {

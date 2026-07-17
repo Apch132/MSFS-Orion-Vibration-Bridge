@@ -56,6 +56,12 @@ function normalizeActiveProfile(value: unknown, fallback: ActiveProfile): Active
   return fallback
 }
 
+function clampConfigWidth(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.min(520, Math.max(240, Math.round(n)))
+}
+
 /**
  * Validate, clamp, fill missing fields, and migrate toward schema v1.
  * Unknown keys on the root object are ignored. Never throws.
@@ -100,6 +106,10 @@ export function validateAndMigratePreferences(raw: unknown): LauncherPreferences
         ? normalizeLocale(appearanceRaw.locale, defaults.appearance.locale)
         : defaults.appearance.locale,
       reverseStickY: asBoolean(appearanceRaw.reverseStickY, defaults.appearance.reverseStickY),
+      configPanelWidthPx: clampConfigWidth(
+        appearanceRaw.configPanelWidthPx,
+        defaults.appearance.configPanelWidthPx,
+      ),
     },
   }
 

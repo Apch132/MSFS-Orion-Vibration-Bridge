@@ -2,6 +2,8 @@
 
 Unofficial Windows utility that reads Microsoft Flight Simulator 2024 telemetry through SimConnect and drives the vibration motors on selected WinWing Orion 2 controllers over HID.
 
+![Launcher in flight with MSFS 2024 F/A-18E](docs/images/launcher-in-flight.png)
+
 It is a Windows utility with two front ends sharing the same vibration core:
 
 - **CLI** (`vibration.js` / `WinwingVibration.exe`) — lightweight, VR-friendly, always uses built-in default feel curves; **requires Node.js** when run from source (the packaged `.exe` is autonomous)
@@ -44,7 +46,7 @@ Typecheck:
 npm run typecheck:launcher
 ```
 
-**Current launcher status:** FR/EN i18n (OS-detected, persisted); merged Flight panel with sticky square HUD + scrollable telemetry; custom title bar; per-panel rail toggles; stick Y uses box-relative positioning with optional reverse axis — see [docs/TELEMETRY.md](docs/TELEMETRY.md) and [docs/INTENSITY.md](docs/INTENSITY.md).
+**Current launcher status:** FR/EN i18n; merged Flight panel (sticky HUD + scroll); resizable config/flight splitter; panel rail collapse; stick reverse option — see [docs/TELEMETRY.md](docs/TELEMETRY.md) and [docs/INTENSITY.md](docs/INTENSITY.md).
 
 ### Telemetry architecture
 

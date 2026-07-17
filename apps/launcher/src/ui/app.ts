@@ -182,6 +182,17 @@ export async function mountApp(
             </div>
           </section>
 
+          <div
+            class="panel-splitter"
+            id="panel-splitter"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize panels"
+            title="Drag to resize · double-click to reset"
+          >
+            <span class="panel-splitter-grip" aria-hidden="true"></span>
+          </div>
+
           <section class="panel panel-flight" id="panel-flight" aria-label="${messages.panels.flight}">
             <div class="panel-header">
               ${iconActivity(16)}
@@ -213,8 +224,10 @@ export async function mountApp(
 
   buildShell()
 
-  const layout = root.querySelector('#layout') as HTMLElement
-  const panelsEmpty = root.querySelector('#panels-empty') as HTMLElement
+  let layout = root.querySelector('#layout') as HTMLElement
+  let panelsEmpty = root.querySelector('#panels-empty') as HTMLElement
+  let panelConfig = root.querySelector('#panel-config') as HTMLElement
+  let panelSplitter = root.querySelector('#panel-splitter') as HTMLElement
   let effectList = root.querySelector('#effect-list') as HTMLElement
   let themeSelect = root.querySelector('#theme-select') as HTMLSelectElement
   let localeSelect = root.querySelector('#locale-select') as HTMLSelectElement
@@ -240,6 +253,8 @@ export async function mountApp(
   let raf = 0
   let maximized = false
   let lastSaveStatus: SaveStatus = controller.getSaveStatus()
+  let splitterDragging = false
+  const DEFAULT_CONFIG_WIDTH = 360
 
   function persistCollapsed(): void {
     try {
@@ -249,13 +264,46 @@ export async function mountApp(
     }
   }
 
+  function applyConfigWidth(widthPx: number): void {
+    const w = Math.min(520, Math.max(240, Math.round(widthPx)))
+    panelConfig.style.flex = `0 0 ${w}px`
+    panelConfig.style.maxWidth = `${w}px`
+    panelConfig.style.width = `${w}px`
+  }
+
   function syncPanelCollapse(): void {
+    layout = root.querySelector('#layout') as HTMLElement
+    panelsEmpty = root.querySelector('#panels-empty') as HTMLElement
+    panelConfig = root.querySelector('#panel-config') as HTMLElement
+    panelSplitter = root.querySelector('#panel-splitter') as HTMLElement
+    collapseBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('.panel-rail-btn'))
+
     layout.dataset.configCollapsed = collapsed.config ? 'true' : 'false'
     layout.dataset.flightCollapsed = collapsed.flight ? 'true' : 'false'
 
     const allHidden = collapsed.config && collapsed.flight
     layout.dataset.allCollapsed = allHidden ? 'true' : 'false'
-    panelsEmpty.hidden = !allHidden
+    if (panelsEmpty) panelsEmpty.hidden = !allHidden
+
+    // Hide splitter when either panel is collapsed (nothing to resize).
+    const splitterHidden = collapsed.config || collapsed.flight
+    if (panelSplitter) {
+      panelSplitter.hidden = splitterHidden
+      panelSplitter.setAttribute('aria-hidden', splitterHidden ? 'true' : 'false')
+    }
+
+    if (collapsed.config && panelConfig) {
+      panelConfig.style.flex = ''
+      panelConfig.style.maxWidth = ''
+      panelConfig.style.width = ''
+    } else if (collapsed.flight && panelConfig) {
+      // Config takes remaining space when Flight is hidden.
+      panelConfig.style.flex = '1 1 auto'
+      panelConfig.style.maxWidth = 'none'
+      panelConfig.style.width = 'auto'
+    } else if (panelConfig) {
+      applyConfigWidth(prefs.appearance.configPanelWidthPx || DEFAULT_CONFIG_WIDTH)
+    }
 
     for (const btn of collapseBtns) {
       const id = btn.dataset.panel as PanelId
@@ -340,6 +388,9 @@ export async function mountApp(
     themeSelect.value = current.appearance.theme
     localeSelect.value = current.appearance.locale
     tele.reverseStick.checked = current.appearance.reverseStickY
+    if (!collapsed.config && !collapsed.flight) {
+      applyConfigWidth(current.appearance.configPanelWidthPx || DEFAULT_CONFIG_WIDTH)
+    }
     for (const tab of tabs) {
       const selected = tab.dataset.profile === current.activeProfile
       tab.setAttribute('aria-selected', selected ? 'true' : 'false')
@@ -458,6 +509,10 @@ export async function mountApp(
   }
 
   function wireDom(): void {
+    layout = root.querySelector('#layout') as HTMLElement
+    panelsEmpty = root.querySelector('#panels-empty') as HTMLElement
+    panelConfig = root.querySelector('#panel-config') as HTMLElement
+    panelSplitter = root.querySelector('#panel-splitter') as HTMLElement
     effectList = root.querySelector('#effect-list') as HTMLElement
     themeSelect = root.querySelector('#theme-select') as HTMLSelectElement
     localeSelect = root.querySelector('#locale-select') as HTMLSelectElement
@@ -482,6 +537,57 @@ export async function mountApp(
         syncPanelCollapse()
       })
     }
+
+    // Horizontal panel splitter
+    panelSplitter.addEventListener('pointerdown', (event) => {
+      if (collapsed.config || collapsed.flight) return
+      event.preventDefault()
+      splitterDragging = true
+      panelSplitter.classList.add('is-dragging')
+      panelSplitter.setPointerCapture(event.pointerId)
+      const startX = event.clientX
+      const startW = panelConfig.getBoundingClientRect().width
+
+      const onMove = (ev: PointerEvent) => {
+        if (!splitterDragging) return
+        applyConfigWidth(startW + (ev.clientX - startX))
+      }
+      const onUp = (ev: PointerEvent) => {
+        if (!splitterDragging) return
+        splitterDragging = false
+        panelSplitter.classList.remove('is-dragging')
+        try {
+          panelSplitter.releasePointerCapture(ev.pointerId)
+        } catch {
+          /* ignore */
+        }
+        panelSplitter.removeEventListener('pointermove', onMove)
+        panelSplitter.removeEventListener('pointerup', onUp)
+        panelSplitter.removeEventListener('pointercancel', onUp)
+        const width = Math.round(panelConfig.getBoundingClientRect().width)
+        controller.updatePreferences((current) => ({
+          ...current,
+          appearance: {
+            ...current.appearance,
+            configPanelWidthPx: Math.min(520, Math.max(240, width)),
+          },
+        }))
+      }
+      panelSplitter.addEventListener('pointermove', onMove)
+      panelSplitter.addEventListener('pointerup', onUp)
+      panelSplitter.addEventListener('pointercancel', onUp)
+    })
+
+    panelSplitter.addEventListener('dblclick', () => {
+      applyConfigWidth(DEFAULT_CONFIG_WIDTH)
+      controller.updatePreferences((current) => ({
+        ...current,
+        appearance: {
+          ...current.appearance,
+          configPanelWidthPx: DEFAULT_CONFIG_WIDTH,
+        },
+      }))
+    })
 
     tabs.forEach((tab) => {
       tab.addEventListener('click', () => {

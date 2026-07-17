@@ -171,4 +171,27 @@ describe('launcher preferences', () => {
     assert.equal(prefs.profiles.aircraft.master.intensity, 55)
     assert.equal(prefs.profiles.aircraft.flaps.intensity, 18)
   })
+
+  it('clamps config panel width to 240..520', () => {
+    const tooNarrow = validateAndMigratePreferences({
+      schemaVersion: 1,
+      appearance: { configPanelWidthPx: 100 },
+    })
+    assert.equal(tooNarrow.appearance.configPanelWidthPx, 240)
+
+    const tooWide = validateAndMigratePreferences({
+      schemaVersion: 1,
+      appearance: { configPanelWidthPx: 900 },
+    })
+    assert.equal(tooWide.appearance.configPanelWidthPx, 520)
+
+    const ok = validateAndMigratePreferences({
+      schemaVersion: 1,
+      appearance: { configPanelWidthPx: 400 },
+    })
+    assert.equal(ok.appearance.configPanelWidthPx, 400)
+
+    const missing = validateAndMigratePreferences({ schemaVersion: 1 })
+    assert.equal(missing.appearance.configPanelWidthPx, 360)
+  })
 })

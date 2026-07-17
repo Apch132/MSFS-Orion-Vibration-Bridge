@@ -46,6 +46,8 @@ export type LauncherPreferences = {
      * Does not alter SimConnect data.
      */
     reverseStickY: boolean
+    /** Width of the Configuration panel in px (splitter). */
+    configPanelWidthPx: number
   }
 }
 

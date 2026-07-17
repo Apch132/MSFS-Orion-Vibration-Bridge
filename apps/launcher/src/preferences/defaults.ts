@@ -51,6 +51,7 @@ export function getDefaultPreferences(): LauncherPreferences {
       theme: 'cockpit',
       locale: detectSystemLocale(),
       reverseStickY: false,
+      configPanelWidthPx: 360,
     },
   }
 }
