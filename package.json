@@ -12,18 +12,23 @@
   "scripts": {
     "start": "node vibration.js",
     "test": "npm run test:cli && npm run test:launcher",
-    "test:cli": "node test/vibration-core.test.js && node --test test/bridge.test.js",
+    "test:cli": "node test/vibration-core.test.js && node --test test/bridge.test.js test/bridge-host-protocol.test.js",
     "test:launcher": "npm --prefix apps/launcher test",
-    "test:bridge": "node --test test/bridge.test.js",
-    "dev:launcher": "npm --prefix apps/launcher run tauri:dev",
+    "test:bridge": "node --test test/bridge.test.js test/bridge-host-protocol.test.js",
+    "dev:launcher": "npm run build:bridge-host && npm --prefix apps/launcher run tauri:dev",
     "build": "npm run build:cli",
     "build:cli": "npx @yao-pkg/pkg . --target node22-win-x64 --output dist/WinwingVibration.exe",
-    "build:launcher": "npm --prefix apps/launcher run tauri:build",
+    "build:bridge-host": "node scripts/build-bridge-host.js",
+    "ensure:bridge-host": "node scripts/ensure-bridge-host.js",
+    "build:launcher": "npm run build:bridge-host && npm --prefix apps/launcher run tauri:build",
     "typecheck:launcher": "npm --prefix apps/launcher run typecheck"
   },
   "pkg": {
     "targets": [
       "node22-win-x64"
+    ],
+    "scripts": [
+      "lib/**/*.js"
     ],
     "assets": [
       "node_modules/node-hid/prebuilds/**/*",
@@ -34,5 +39,8 @@
   "dependencies": {
     "node-hid": "^3.1.0",
     "node-simconnect": "^4.0.0"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.21.0"
   }
 }

@@ -5,6 +5,7 @@ node_modules/
 dist/
 apps/launcher/dist/
 apps/launcher/app-icon.png
+apps/launcher/src-tauri/binaries/*.exe
 
 # Tauri / Rust
 apps/launcher/src-tauri/target/

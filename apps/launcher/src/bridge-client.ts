@@ -1,5 +1,5 @@
 /**
- * Frontend façade over the shared Node bridge host.
+ * Frontend façade over the packaged bridge-host sidecar.
  * The webview never touches SimConnect, HID, or timers.
  */
 
@@ -44,7 +44,7 @@ export type BridgeEvent =
   | { event: 'preferencesUpdated'; preferences: LauncherPreferences; state: BridgeRuntimeState }
   | { event: 'log'; level: string; message: string }
   | { event: 'error'; message: string }
-  | { event: 'pong' | 'bye' }
+  | { event: 'pong' | 'shutdownComplete' }
   | { event: string; [key: string]: unknown }
 
 type StateListener = (state: BridgeRuntimeState) => void
@@ -118,11 +118,15 @@ export class LauncherBridgeClient {
       this.unlisten()
       this.unlisten = null
     }
-    if (this.available && this.state.running) {
+    if (this.available) {
       try {
-        await invoke('bridge_stop')
+        await invoke('bridge_shutdown')
       } catch {
-        /* ignore on shutdown */
+        try {
+          await invoke('bridge_stop')
+        } catch {
+          /* ignore on shutdown */
+        }
       }
     }
   }

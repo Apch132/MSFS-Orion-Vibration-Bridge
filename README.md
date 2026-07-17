@@ -2,10 +2,10 @@
 
 Unofficial Windows utility that reads Microsoft Flight Simulator 2024 telemetry through SimConnect and drives the vibration motors on selected WinWing Orion 2 controllers over HID.
 
-It is a Windows utility with two front ends sharing the same future vibration core:
+It is a Windows utility with two front ends sharing the same vibration core:
 
-- **CLI** (`vibration.js`) — lightweight, VR-friendly, always uses built-in default feel curves
-- **Desktop launcher** (Tauri, in progress) — local preference UI, saved profiles, future telemetry and HUD
+- **CLI** (`vibration.js` / `WinwingVibration.exe`) — lightweight, VR-friendly, always uses built-in default feel curves; **requires Node.js** when run from source (the packaged `.exe` is autonomous)
+- **Desktop launcher** (Tauri) — local preference UI, saved profiles, Start/Stop via an embedded `bridge-host` sidecar; **Node.js is not required** on end-user machines
 
 ## CLI vs Desktop Launcher
 
@@ -14,21 +14,25 @@ It is a Windows utility with two front ends sharing the same future vibration co
 | Role | Run the vibration bridge | Configure profiles / themes; Start/Stop shared bridge |
 | Feel curves | Built-in defaults from the shared core | Editable Aircraft / Helicopter profiles (local only) |
 | Preferences file | None | OS app data via Tauri Store (`launcher-preferences.json`) |
-| SimConnect / HID | Active via shared `createBridge()` | Same runtime via Node host (UI never talks to HID/SimConnect) |
+| SimConnect / HID | Active via shared `createBridge()` | Same runtime via packaged `bridge-host` sidecar (UI never talks to HID/SimConnect) |
+| Runtime dependency | Node.js (source) or packaged CLI exe | None (sidecar embedded in the installer) |
 | Best for | VR, minimal footprint | Desktop tuning and future HUD |
 
 Launcher preferences live under the Windows app data directory for identifier `community.winwing.msfs2024-vibration-bridge` (managed by Tauri / the Store plugin). They are **never** read by the CLI and are not stored in the git repository.
 
 ### Launcher development
 
-Requirements beyond the CLI: Rust toolchain, Windows WebView2 (usually preinstalled).
+Requirements beyond the CLI: Rust toolchain, Windows WebView2 (usually preinstalled). The bridge host sidecar is built with `@yao-pkg/pkg` before Tauri starts.
 
 ```bash
 npm --prefix apps/launcher ci
+npm run build:bridge-host
 npm run dev:launcher
 ```
 
-Build the launcher installer / binary:
+`tauri dev` / `tauri build` also call `scripts/ensure-bridge-host.js` automatically so the sidecar exists under `apps/launcher/src-tauri/binaries/`.
+
+Build the launcher NSIS installer (embeds the sidecar):
 
 ```bash
 npm run build:launcher
@@ -40,7 +44,7 @@ Typecheck:
 npm run typecheck:launcher
 ```
 
-**Current launcher status:** preferences load/validate/autosave/reset work; Start/Stop drives the **shared bridge runtime** (same engine as the CLI) through a Node host process; Telemetry and HUD panels remain structural placeholders without live SimVar tables.
+**Current launcher status:** preferences load/validate/autosave/reset work; Start/Stop drives the **shared bridge runtime** (same engine as the CLI) through the packaged sidecar; Telemetry and HUD panels remain structural placeholders without live SimVar tables.
 
 ## Project status
 
@@ -122,7 +126,24 @@ npm run build:cli
 
 Output: `dist/WinwingVibration.exe` (not committed to git). The packaged runtime is Node 22.
 
-Run unit tests (CLI core + launcher preferences; no simulator / no hardware required):
+Build the launcher bridge-host sidecar (autonomous; no system Node.js at runtime):
+
+```bash
+npm run build:bridge-host
+```
+
+Output (not committed):
+
+- `dist/sidecars/bridge-host-x86_64-pc-windows-msvc.exe`
+- `apps/launcher/src-tauri/binaries/bridge-host-x86_64-pc-windows-msvc.exe`
+
+Build the desktop launcher (NSIS, embeds the sidecar):
+
+```bash
+npm run build:launcher
+```
+
+Run unit tests (CLI core + host protocol + launcher preferences; no simulator / no hardware required):
 
 ```bash
 npm test
@@ -142,13 +163,13 @@ If hardware is plugged in later, the bridge periodically re-scans and opens newl
 
 - Windows only
 - Only the listed USB PIDs / grip combinations are supported
-- Desktop launcher Start/Stop requires **Node.js on PATH** to spawn the shared bridge host
+- Desktop launcher is autonomous (bundled `bridge-host` sidecar); CLI from source still needs Node.js
 - Telemetry / HUD panels are not yet populated with live SimVar tables
 - Release binaries are unsigned
 - Effect quality depends on SimVars each aircraft publishes
 - Third-party aircraft may omit or mishandle some variables
 
-Experimental HID research scripts live under `tools/hardware-research/` and are not required to run the bridge.
+Experimental HID research scripts are not part of the public runtime and are not required to run the bridge.
 
 ## Safety and disclaimer
 
