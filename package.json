@@ -1,0 +1,31 @@
+{
+  "name": "winwing-msfs2024-vibration",
+  "version": "0.1.0",
+  "description": "Unofficial Windows utility that maps MSFS 2024 SimConnect telemetry to WinWing Orion 2 vibration motors over HID",
+  "main": "vibration.js",
+  "bin": "vibration.js",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node vibration.js",
+    "test": "node test/vibration-core.test.js",
+    "build": "npx @yao-pkg/pkg . --target node22-win-x64 --output dist/WinwingVibration.exe"
+  },
+  "pkg": {
+    "targets": [
+      "node22-win-x64"
+    ],
+    "assets": [
+      "node_modules/node-hid/prebuilds/**/*",
+      "node_modules/node-simconnect/**/*.node",
+      "lib/**/*"
+    ]
+  },
+  "dependencies": {
+    "node-hid": "^3.1.0",
+    "node-simconnect": "^4.0.0"
+  }
+}

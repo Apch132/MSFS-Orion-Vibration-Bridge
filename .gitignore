@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local agent / IDE
+.claude/
+.cursor/
+.vscode/
+*.code-workspace
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Coverage / test caches
+coverage/
+.nyc_output/
+*.lcov
+
+# Node / tooling caches
+.npm/
+.cache/
+.eslintcache
+.node_repl_history
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+$RECYCLE.BIN/
+
+# Archives and local dumps
+*.zip
+*.7z
+*.rar
+*.tar
+*.gz
+*.dump
+*.dmp
+WWTHID.log
+SimLogic.log
+*.bak
+*.tmp
