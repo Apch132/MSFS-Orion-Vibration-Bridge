@@ -49,7 +49,7 @@ function createMockSimConnect(options = {}) {
 
   return {
     Protocol: { FSX_SP2: 1 },
-    SimConnectDataType: { FLOAT64: 1 },
+    SimConnectDataType: { FLOAT64: 1, STRING256: 9, STRING32: 6 },
     SimConnectPeriod: { SIM_FRAME: 1 },
     SimConnectConstants: { UNUSED: 0, OBJECT_ID_USER: 0 },
     open() {

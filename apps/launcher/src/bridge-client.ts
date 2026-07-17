@@ -6,6 +6,13 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { LauncherPreferences } from './preferences/types'
+import {
+  asFlightEvent,
+  asTelemetrySnapshot,
+  createEmptyTelemetry,
+  type FlightEvent,
+  type TelemetrySnapshot,
+} from './telemetry/types'
 
 export type BridgeRuntimeState = {
   status: 'stopped' | 'starting' | 'running' | 'stopping'
@@ -42,6 +49,8 @@ function asBridgeState(value: unknown): BridgeRuntimeState | null {
 export type BridgeEvent =
   | { event: 'ready' | 'state' | 'started' | 'stopped'; state: BridgeRuntimeState }
   | { event: 'preferencesUpdated'; preferences: LauncherPreferences; state: BridgeRuntimeState }
+  | { event: 'telemetry'; payload: TelemetrySnapshot }
+  | { event: 'event'; payload: FlightEvent }
   | { event: 'log'; level: string; message: string }
   | { event: 'error'; message: string }
   | { event: 'pong' | 'shutdownComplete' }
@@ -49,6 +58,8 @@ export type BridgeEvent =
 
 type StateListener = (state: BridgeRuntimeState) => void
 type ErrorListener = (message: string) => void
+type TelemetryListener = (telemetry: TelemetrySnapshot) => void
+type FlightEventListener = (event: FlightEvent) => void
 
 const DEFAULT_STATE: BridgeRuntimeState = {
   status: 'stopped',
@@ -60,9 +71,12 @@ const DEFAULT_STATE: BridgeRuntimeState = {
 
 export class LauncherBridgeClient {
   private state: BridgeRuntimeState = { ...DEFAULT_STATE }
+  private telemetry: TelemetrySnapshot = createEmptyTelemetry()
   private unlisten: UnlistenFn | null = null
   private readonly stateListeners = new Set<StateListener>()
   private readonly errorListeners = new Set<ErrorListener>()
+  private readonly telemetryListeners = new Set<TelemetryListener>()
+  private readonly flightEventListeners = new Set<FlightEventListener>()
   private available = false
 
   isAvailable(): boolean {
@@ -73,10 +87,25 @@ export class LauncherBridgeClient {
     return { ...this.state }
   }
 
+  getTelemetry(): TelemetrySnapshot {
+    return structuredClone(this.telemetry)
+  }
+
   onState(listener: StateListener): () => void {
     this.stateListeners.add(listener)
     listener(this.getState())
     return () => this.stateListeners.delete(listener)
+  }
+
+  onTelemetry(listener: TelemetryListener): () => void {
+    this.telemetryListeners.add(listener)
+    listener(this.getTelemetry())
+    return () => this.telemetryListeners.delete(listener)
+  }
+
+  onFlightEvent(listener: FlightEventListener): () => void {
+    this.flightEventListeners.add(listener)
+    return () => this.flightEventListeners.delete(listener)
   }
 
   onError(listener: ErrorListener): () => void {
@@ -89,12 +118,23 @@ export class LauncherBridgeClient {
       this.available = false
       return
     }
+    if (this.unlisten) {
+      this.unlisten()
+      this.unlisten = null
+    }
     this.available = true
     this.unlisten = await listen<BridgeEvent>('bridge://event', (event) => {
       this.handleEvent(event.payload)
     })
     await invoke('bridge_ensure')
     await invoke('bridge_get_state')
+    try {
+      const cached = await invoke<unknown>('bridge_get_telemetry')
+      const snap = asTelemetrySnapshot(cached)
+      if (snap) this.setTelemetry(snap)
+    } catch {
+      /* optional on first boot */
+    }
   }
 
   async start(preferences: LauncherPreferences): Promise<void> {
@@ -118,6 +158,10 @@ export class LauncherBridgeClient {
       this.unlisten()
       this.unlisten = null
     }
+    this.stateListeners.clear()
+    this.telemetryListeners.clear()
+    this.flightEventListeners.clear()
+    this.errorListeners.clear()
     if (this.available) {
       try {
         await invoke('bridge_shutdown')
@@ -137,11 +181,42 @@ export class LauncherBridgeClient {
     }
   }
 
+  private setTelemetry(next: TelemetrySnapshot): void {
+    this.telemetry = next
+    for (const listener of this.telemetryListeners) listener(this.getTelemetry())
+  }
+
   private handleEvent(payload: BridgeEvent): void {
     if (payload.event === 'error') {
-      for (const listener of this.errorListeners) listener(String(payload.message || 'bridge error'))
+      const message = String((payload as { message?: string }).message || 'bridge error')
+      for (const listener of this.errorListeners) listener(message)
+      if (this.telemetry.connection.simconnect === 'connected') {
+        this.setTelemetry({
+          ...this.telemetry,
+          stale: true,
+          connection: {
+            ...this.telemetry.connection,
+            simconnect: 'error',
+          },
+        })
+      }
       return
     }
+
+    if (payload.event === 'telemetry') {
+      const snap = asTelemetrySnapshot((payload as { payload?: unknown }).payload)
+      if (snap) this.setTelemetry(snap)
+      return
+    }
+
+    if (payload.event === 'event') {
+      const flightEvent = asFlightEvent((payload as { payload?: unknown }).payload)
+      if (flightEvent) {
+        for (const listener of this.flightEventListeners) listener(flightEvent)
+      }
+      return
+    }
+
     if ('state' in payload) {
       const next = asBridgeState(payload.state)
       if (!next) return

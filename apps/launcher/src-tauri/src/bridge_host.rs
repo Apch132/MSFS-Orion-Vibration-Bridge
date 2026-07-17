@@ -22,6 +22,8 @@ const TARGET_TRIPLE: &str = "x86_64-pc-windows-msvc";
 #[derive(Default)]
 pub struct BridgeHost {
   inner: Mutex<HostSlot>,
+  last_telemetry: Mutex<Option<Value>>,
+  last_flight_event: Mutex<Option<Value>>,
 }
 
 #[derive(Default)]
@@ -114,6 +116,7 @@ fn normalize_event(mut value: Value) -> Value {
 
 fn spawn_reader_threads(
   app: AppHandle,
+  host: Arc<BridgeHost>,
   stdout: impl std::io::Read + Send + 'static,
   stderr: impl std::io::Read + Send + 'static,
   ready_tx: mpsc::SyncSender<Result<(), String>>,
@@ -123,6 +126,7 @@ fn spawn_reader_threads(
   let ready_tx = Arc::new(Mutex::new(Some(ready_tx)));
 
   let app_out = app.clone();
+  let host_out = Arc::clone(&host);
   let ready_flag_out = Arc::clone(&ready_flag);
   let ready_tx_out = Arc::clone(&ready_tx);
   let expecting_exit_out = Arc::clone(&expecting_exit);
@@ -136,6 +140,7 @@ fn spawn_reader_threads(
       match serde_json::from_str::<Value>(trimmed) {
         Ok(raw) => {
           let value = normalize_event(raw);
+          cache_protocol_payload(&host_out, &value);
           if event_name(&value) == Some("ready")
             && !ready_flag_out.swap(true, Ordering::SeqCst)
           {
@@ -168,6 +173,7 @@ fn spawn_reader_threads(
         }
       }
     } else if !expecting_exit_out.load(Ordering::SeqCst) {
+      mark_telemetry_stale(&host_out);
       let _ = app_out.emit(
         "bridge://event",
         json!({
@@ -202,7 +208,38 @@ fn spawn_reader_threads(
   });
 }
 
-fn ensure_host(app: &AppHandle, state: &BridgeHost) -> Result<(), String> {
+fn cache_protocol_payload(host: &BridgeHost, value: &Value) {
+  match event_name(value) {
+    Some("telemetry") => {
+      if let Some(payload) = value.get("payload").cloned() {
+        if let Ok(mut guard) = host.last_telemetry.lock() {
+          *guard = Some(payload);
+        }
+      }
+    }
+    Some("event") => {
+      if let Some(payload) = value.get("payload").cloned() {
+        if let Ok(mut guard) = host.last_flight_event.lock() {
+          *guard = Some(payload);
+        }
+      }
+    }
+    _ => {}
+  }
+}
+
+fn mark_telemetry_stale(host: &BridgeHost) {
+  if let Ok(mut guard) = host.last_telemetry.lock() {
+    if let Some(ref mut payload) = *guard {
+      payload["stale"] = json!(true);
+      if let Some(conn) = payload.get_mut("connection") {
+        conn["simconnect"] = json!("error");
+      }
+    }
+  }
+}
+
+fn ensure_host(app: &AppHandle, state: &Arc<BridgeHost>) -> Result<(), String> {
   loop {
     {
       let mut guard = state.inner.lock().map_err(|e| e.to_string())?;
@@ -213,6 +250,7 @@ fn ensure_host(app: &AppHandle, state: &BridgeHost) -> Result<(), String> {
             host.alive.store(false, Ordering::SeqCst);
             host.expecting_exit.store(true, Ordering::SeqCst);
             guard.process = None;
+            mark_telemetry_stale(state);
             let _ = app.emit(
               "bridge://event",
               json!({
@@ -259,6 +297,7 @@ fn ensure_host(app: &AppHandle, state: &BridgeHost) -> Result<(), String> {
       let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), String>>(1);
       spawn_reader_threads(
         app.clone(),
+        Arc::clone(state),
         stdout,
         stderr,
         ready_tx,
@@ -366,7 +405,7 @@ pub fn shutdown_host(state: &BridgeHost) {
 
 #[tauri::command]
 pub fn bridge_ensure(app: AppHandle, state: State<'_, Arc<BridgeHost>>) -> Result<(), String> {
-  ensure_host(&app, state.as_ref())
+  ensure_host(&app, &state)
 }
 
 #[tauri::command]
@@ -375,7 +414,7 @@ pub fn bridge_start(
   state: State<'_, Arc<BridgeHost>>,
   preferences: Option<Value>,
 ) -> Result<(), String> {
-  ensure_host(&app, state.as_ref())?;
+  ensure_host(&app, &state)?;
   let mut cmd = json!({ "cmd": "start", "protocolVersion": PROTOCOL_VERSION });
   if let Some(prefs) = preferences {
     cmd["preferences"] = prefs;
@@ -385,7 +424,7 @@ pub fn bridge_start(
 
 #[tauri::command]
 pub fn bridge_stop(app: AppHandle, state: State<'_, Arc<BridgeHost>>) -> Result<(), String> {
-  ensure_host(&app, state.as_ref())?;
+  ensure_host(&app, &state)?;
   write_cmd(
     state.as_ref(),
     json!({ "cmd": "stop", "protocolVersion": PROTOCOL_VERSION }),
@@ -398,7 +437,7 @@ pub fn bridge_update_preferences(
   state: State<'_, Arc<BridgeHost>>,
   preferences: Value,
 ) -> Result<(), String> {
-  ensure_host(&app, state.as_ref())?;
+  ensure_host(&app, &state)?;
   write_cmd(
     state.as_ref(),
     json!({
@@ -411,11 +450,20 @@ pub fn bridge_update_preferences(
 
 #[tauri::command]
 pub fn bridge_get_state(app: AppHandle, state: State<'_, Arc<BridgeHost>>) -> Result<(), String> {
-  ensure_host(&app, state.as_ref())?;
+  ensure_host(&app, &state)?;
   write_cmd(
     state.as_ref(),
     json!({ "cmd": "getState", "protocolVersion": PROTOCOL_VERSION }),
   )
+}
+
+#[tauri::command]
+pub fn bridge_get_telemetry(state: State<'_, Arc<BridgeHost>>) -> Result<Option<Value>, String> {
+  let guard = state
+    .last_telemetry
+    .lock()
+    .map_err(|e| e.to_string())?;
+  Ok(guard.clone())
 }
 
 #[tauri::command]
@@ -646,5 +694,96 @@ mod tests {
     let host = BridgeHost::default();
     shutdown_host(&host);
     shutdown_host(&host);
+  }
+
+  #[test]
+  fn cache_protocol_payload_stores_telemetry_and_events() {
+    let host = BridgeHost::default();
+    cache_protocol_payload(
+      &host,
+      &json!({
+        "type": "telemetry",
+        "event": "telemetry",
+        "payload": {
+          "schemaVersion": 1,
+          "flight": { "mach": 0.82 }
+        }
+      }),
+    );
+    cache_protocol_payload(
+      &host,
+      &json!({
+        "type": "event",
+        "event": "event",
+        "payload": { "kind": "takeoff", "timestamp": 1 }
+      }),
+    );
+
+    let telemetry = host.last_telemetry.lock().unwrap().clone().unwrap();
+    assert_eq!(telemetry["schemaVersion"], 1);
+    assert_eq!(telemetry["flight"]["mach"], 0.82);
+
+    let event = host.last_flight_event.lock().unwrap().clone().unwrap();
+    assert_eq!(event["kind"], "takeoff");
+  }
+
+  #[test]
+  fn cache_ignores_incomplete_telemetry_payload() {
+    let host = BridgeHost::default();
+    cache_protocol_payload(&host, &json!({ "type": "telemetry", "event": "telemetry" }));
+    assert!(host.last_telemetry.lock().unwrap().is_none());
+  }
+
+  #[test]
+  fn mark_telemetry_stale_sets_error_flag() {
+    let host = BridgeHost::default();
+    cache_protocol_payload(
+      &host,
+      &json!({
+        "type": "telemetry",
+        "payload": {
+          "stale": false,
+          "connection": { "simconnect": "connected", "hid": "connected" }
+        }
+      }),
+    );
+    mark_telemetry_stale(&host);
+    let telemetry = host.last_telemetry.lock().unwrap().clone().unwrap();
+    assert_eq!(telemetry["stale"], true);
+    assert_eq!(telemetry["connection"]["simconnect"], "error");
+  }
+
+  #[test]
+  fn normalize_event_accepts_telemetry_type() {
+    let value = normalize_event(json!({ "type": "telemetry", "payload": {} }));
+    assert_eq!(value["protocolVersion"], PROTOCOL_VERSION);
+    assert_eq!(value["event"], "telemetry");
+    assert_eq!(event_name(&value), Some("telemetry"));
+  }
+
+  #[test]
+  fn fake_host_emits_telemetry_on_get() {
+    let mut child = Command::new(node_bin())
+      .arg(fixture_host())
+      .stdin(Stdio::piped())
+      .stdout(Stdio::piped())
+      .stderr(Stdio::null())
+      .spawn()
+      .expect("spawn fake host");
+
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut stdin = child.stdin.take().unwrap();
+    let mut line = String::new();
+    stdout.read_line(&mut line).unwrap();
+
+    writeln!(stdin, "{}", json!({ "cmd": "getTelemetry" })).unwrap();
+    line.clear();
+    stdout.read_line(&mut line).unwrap();
+    let msg: Value = serde_json::from_str(line.trim()).unwrap();
+    assert_eq!(event_name(&msg), Some("telemetry"));
+    assert!(msg.get("payload").is_some());
+
+    writeln!(stdin, "{}", json!({ "cmd": "shutdown" })).unwrap();
+    let _ = child.wait();
   }
 }

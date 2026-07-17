@@ -74,6 +74,64 @@ async function main() {
       case 'getState':
         send({ type: 'state', event: 'state', state })
         break
+      case 'getTelemetry':
+        send({
+          type: 'telemetry',
+          event: 'telemetry',
+          payload: {
+            schemaVersion: 1,
+            timestamp: Date.now(),
+            stale: false,
+            connection: {
+              simconnect: state.simConnected ? 'connected' : 'disconnected',
+              hid: state.hidOpenCount > 0 ? 'connected' : 'disconnected',
+            },
+            aircraft: {
+              title: 'Fake Aircraft',
+              type: 'Jet',
+              category: 'Airplane',
+              isHelicopter: false,
+              engineCount: 2,
+            },
+            flight: {
+              indicatedAirspeedKts: 220,
+              trueAirspeedKts: 230,
+              groundSpeedKts: 210,
+              altitudeFt: 12000,
+              verticalSpeedFpm: 0,
+              headingDeg: 90,
+              pitchDeg: 2,
+              bankDeg: 0,
+              mach: 0.55,
+              gForce: 1,
+              angleOfAttackDeg: 3,
+              sideslipDeg: 0,
+            },
+            aircraftState: {
+              onGround: false,
+              gearPosition: 0,
+              flapsPosition: 0,
+              spoilersPosition: 0,
+              stallWarning: false,
+              overspeedWarning: false,
+              afterburnerActive: false,
+            },
+            controls: {
+              stickX: 0,
+              stickY: 0,
+              rudder: 0,
+              leftThrottle: 0.6,
+              rightThrottle: 0.6,
+              brakesLeft: 0,
+              brakesRight: 0,
+            },
+            engines: [
+              { index: 1, running: true, rpmPercent: 80, n1Percent: 80, n2Percent: 85, combustion: true },
+              { index: 2, running: true, rpmPercent: 80, n1Percent: 80, n2Percent: 85, combustion: true },
+            ],
+          },
+        })
+        break
       case 'shutdown':
         send({ type: 'shutdownComplete', event: 'shutdownComplete' })
         process.exit(0)

@@ -163,6 +163,17 @@ describe('bridge host protocol (fake sidecar)', () => {
     await exited
     assert.equal(host.child.killed, true)
   })
+
+  it('getTelemetry on fake host', async () => {
+    const host = spawnScript(FAKE_HOST)
+    await host.nextEvent()
+    host.send({ cmd: 'getTelemetry' })
+    const msg = await host.nextEvent()
+    assert.equal(msg.event, 'telemetry')
+    assert.equal(msg.payload.schemaVersion, 1)
+    assert.ok(msg.payload.flight)
+    await host.shutdown()
+  })
 })
 
 describe('real bridge host smoke', () => {

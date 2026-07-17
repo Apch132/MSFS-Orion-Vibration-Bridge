@@ -18,6 +18,7 @@ pub fn run() {
       bridge_host::bridge_stop,
       bridge_host::bridge_update_preferences,
       bridge_host::bridge_get_state,
+      bridge_host::bridge_get_telemetry,
       bridge_host::bridge_shutdown,
     ])
     .build(tauri::generate_context!())

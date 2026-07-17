@@ -44,7 +44,27 @@ Typecheck:
 npm run typecheck:launcher
 ```
 
-**Current launcher status:** preferences load/validate/autosave/reset work; Start/Stop drives the **shared bridge runtime** (same engine as the CLI) through the packaged sidecar; Telemetry and HUD panels remain structural placeholders without live SimVar tables.
+**Current launcher status:** preferences load/validate/autosave/reset work; Start/Stop drives the **shared bridge runtime** (same engine as the CLI) through the packaged sidecar; live SimConnect telemetry feeds the Telemetry cards, animated controls, flight-event timeline, and HUD (see [docs/TELEMETRY.md](docs/TELEMETRY.md)).
+
+### Telemetry architecture
+
+```text
+MSFS → createBridge() → host stdout (≤15 Hz) → Tauri → launcher UI / HUD
+                 ↘ 50 Hz HID vibration (unchanged)
+```
+
+- Without MSFS: launcher stays usable; SimConnect shows Disconnected / Connecting; HUD stays neutral.
+- Without WinWing HID: telemetry and HUD still work; HID status is independent.
+- Sidecar crash: last values marked stale; Start again after the host respawns.
+
+Smoke-test the **packaged** sidecar (not `node lib/bridge/host.js`):
+
+```bash
+npm run build:bridge-host
+npm run smoke:bridge-host
+```
+
+Requires MSFS 2024 in a flight for a full SimConnect pass (exit code `4` if the sim is offline).
 
 ## Project status
 
@@ -164,10 +184,12 @@ If hardware is plugged in later, the bridge periodically re-scans and opens newl
 - Windows only
 - Only the listed USB PIDs / grip combinations are supported
 - Desktop launcher is autonomous (bundled `bridge-host` sidecar); CLI from source still needs Node.js
-- Telemetry / HUD panels are not yet populated with live SimVar tables
+- UI telemetry is capped at ~15 Hz; HUD interpolates locally (not a certified instrument)
+- Control positions use SimConnect surface/lever positions (not raw USB HID axes)
 - Release binaries are unsigned
 - Effect quality depends on SimVars each aircraft publishes
 - Third-party aircraft may omit or mishandle some variables
+- Packaged sidecar uses EvenAR `node-simconnect` (pure JS over the SimConnect service); no `SimConnect.dll` is shipped
 
 Experimental HID research scripts are not part of the public runtime and are not required to run the bridge.
 

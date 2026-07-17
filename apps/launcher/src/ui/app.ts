@@ -9,7 +9,23 @@ import {
   type SaveStatus,
   type ThemePreference,
 } from '../preferences/types'
-import { iconActivity, iconGauge, iconPlane, iconRadio, iconSliders } from './icons'
+import {
+  createSmoothControls,
+  createSmoothFlight,
+  stepControls,
+  stepFlight,
+} from '../telemetry/interpolate'
+import type { TelemetrySnapshot } from '../telemetry/types'
+import { iconActivity, iconGauge, iconRadio, iconSliders } from './icons'
+import { bindHud, drawHud, hudHtml } from './hud'
+import {
+  appendFlightEvent,
+  bindTelemetryPanel,
+  renderControls,
+  renderTelemetryCards,
+  resetFlightEvents,
+  telemetryPanelHtml,
+} from './telemetry-panel'
 
 function resolveTheme(theme: ThemePreference): Exclude<ThemePreference, 'system'> {
   if (theme !== 'system') return theme
@@ -44,7 +60,7 @@ export async function mountApp(
       <div class="sim-pill" id="sim-pill" data-state="offline" title="SimConnect status from the shared bridge runtime">
         ${iconRadio(14)}
         <span class="sim-dot" aria-hidden="true"></span>
-        <span id="sim-label">SimConnect · Not connected</span>
+        <span id="sim-label">SimConnect · Disconnected</span>
       </div>
       <div class="actions">
         <button type="button" class="btn btn-primary" id="btn-engine" ${bridge?.isAvailable() ? '' : 'disabled'} title="${bridge?.isAvailable() ? 'Start or stop the shared vibration bridge' : 'Bridge runtime requires the Tauri desktop app'}">
@@ -80,23 +96,15 @@ export async function mountApp(
 
       <section class="panel" aria-label="SimConnect Telemetry">
         <div class="panel-header">${iconActivity(16)}<span class="label">SimConnect Telemetry</span></div>
-        <div class="panel-body">
-          <div class="placeholder">
-            <strong>Telemetry panel</strong>
-            <span>Live SimVars will appear here in a later release. No simulated flight data is shown.</span>
-            <code id="telemetry-status">Status: bridge idle</code>
-          </div>
+        <div class="panel-body panel-body-telemetry">
+          ${telemetryPanelHtml()}
         </div>
       </section>
 
       <section class="panel" aria-label="Flight HUD">
         <div class="panel-header">${iconGauge(16)}<span class="label">Flight HUD</span></div>
-        <div class="panel-body">
-          <div class="placeholder">
-            <strong>Flight HUD</strong>
-            <span>Structured HUD layout reserved for a later task.</span>
-            <code id="engine-status">${iconPlane(14)} Engine bridge: ${bridge?.isAvailable() ? 'ready' : 'unavailable in browser preview'}</code>
-          </div>
+        <div class="panel-body panel-body-hud">
+          ${hudHtml()}
         </div>
       </section>
     </main>
@@ -114,10 +122,17 @@ export async function mountApp(
   const engineBtn = root.querySelector('#btn-engine') as HTMLButtonElement
   const simPill = root.querySelector('#sim-pill') as HTMLElement
   const simLabel = root.querySelector('#sim-label') as HTMLElement
-  const telemetryStatus = root.querySelector('#telemetry-status') as HTMLElement
-  const engineStatus = root.querySelector('#engine-status') as HTMLElement
   const bridgeFooter = root.querySelector('#bridge-footer') as HTMLElement
   const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('.tab'))
+  const tele = bindTelemetryPanel(root)
+  const hud = bindHud(root)
+
+  let targetTelemetry: TelemetrySnapshot | null = bridge?.getTelemetry() ?? null
+  let smoothControls = createSmoothControls()
+  let smoothFlight = createSmoothFlight()
+  let eventSession = 0
+  let lastAircraftKey = ''
+  let raf = 0
 
   function renderEffects(current: LauncherPreferences): void {
     const profile = current.profiles[current.activeProfile]
@@ -165,29 +180,84 @@ export async function mountApp(
     saveStatusEl.dataset.status = status
   }
 
+  function syncSimPillFromTelemetry(snap: TelemetrySnapshot | null, bridgeState: BridgeRuntimeState): void {
+    const sim = snap?.connection.simconnect
+    if (sim === 'connected') {
+      simPill.dataset.state = 'online'
+      simLabel.textContent = `SimConnect · ${bridgeState.simApplicationName || 'Connected'}`
+      return
+    }
+    if (sim === 'connecting' || (bridgeState.running && !bridgeState.simConnected)) {
+      simPill.dataset.state = 'connecting'
+      simLabel.textContent = 'SimConnect · Connecting'
+      return
+    }
+    if (sim === 'error' || snap?.stale) {
+      simPill.dataset.state = 'error'
+      simLabel.textContent = 'SimConnect · Error'
+      return
+    }
+    simPill.dataset.state = 'offline'
+    simLabel.textContent = 'SimConnect · Disconnected'
+  }
+
   function syncBridgeUi(state: BridgeRuntimeState): void {
     const running = state.status === 'running' || state.status === 'starting'
     engineBtn.textContent = running ? 'Stop' : 'Start'
     engineBtn.disabled = !bridge?.isAvailable() || state.status === 'starting' || state.status === 'stopping'
 
-    if (state.simConnected) {
-      simPill.dataset.state = 'online'
-      simLabel.textContent = `SimConnect · ${state.simApplicationName || 'Connected'}`
-    } else {
-      simPill.dataset.state = 'offline'
-      simLabel.textContent = running ? 'SimConnect · Waiting…' : 'SimConnect · Not connected'
-    }
-
-    telemetryStatus.textContent = `Status: bridge ${state.status}` +
-      (state.hidOpenCount ? ` · HID ${state.hidOpenCount}` : '')
-    engineStatus.innerHTML = `${iconPlane(14)} Engine bridge: ${state.status}`
+    syncSimPillFromTelemetry(targetTelemetry, state)
     bridgeFooter.textContent = running
       ? 'Bridge running — preference changes apply live'
       : 'Preferences stored in the OS app data directory'
   }
 
+  function onTelemetry(snap: TelemetrySnapshot): void {
+    const key = `${snap.aircraft.title}|${snap.aircraft.category}|${snap.aircraft.engineCount}`
+    if (lastAircraftKey && key !== lastAircraftKey) {
+      eventSession += 1
+      resetFlightEvents(tele.timeline)
+    }
+    lastAircraftKey = key
+    targetTelemetry = snap
+    renderTelemetryCards(tele, snap)
+    syncSimPillFromTelemetry(snap, bridge?.getState() ?? {
+      status: 'stopped',
+      running: false,
+      simConnected: false,
+      simApplicationName: null,
+      hidOpenCount: 0,
+    })
+  }
+
+  function tick(): void {
+    const target = targetTelemetry
+    if (target) {
+      smoothControls = stepControls(smoothControls, target.controls, 0.22)
+      smoothFlight = stepFlight(smoothFlight, {
+        headingDeg: target.flight.headingDeg,
+        pitchDeg: target.flight.pitchDeg,
+        bankDeg: target.flight.bankDeg,
+        indicatedAirspeedKts: target.flight.indicatedAirspeedKts,
+        altitudeFt: target.flight.altitudeFt,
+        mach: target.flight.mach,
+        gForce: target.flight.gForce,
+        verticalSpeedFpm: target.flight.verticalSpeedFpm,
+        angleOfAttackDeg: target.flight.angleOfAttackDeg,
+        sideslipDeg: target.flight.sideslipDeg,
+      }, 0.18)
+      renderControls(tele, smoothControls)
+      const active = target.connection.simconnect === 'connected'
+      drawHud(hud, smoothFlight, active, Boolean(target.stale))
+    } else {
+      drawHud(hud, smoothFlight, false, false)
+    }
+    raf = requestAnimationFrame(tick)
+  }
+
   syncChrome(prefs)
   setSaveStatus(controller.getSaveStatus())
+  if (targetTelemetry) renderTelemetryCards(tele, targetTelemetry)
 
   controller.subscribe((next) => {
     prefs = next
@@ -280,6 +350,11 @@ export async function mountApp(
     const state = bridge.getState()
     const running = state.status === 'running' || state.status === 'starting'
     engineBtn.disabled = true
+    if (!running) {
+      eventSession += 1
+      resetFlightEvents(tele.timeline)
+      lastAircraftKey = ''
+    }
     const action = running
       ? bridge.stop()
       : bridge.start(controller.getPreferences())
@@ -289,18 +364,27 @@ export async function mountApp(
     })
   })
 
+  const unsubs: Array<() => void> = []
   if (bridge) {
-    bridge.onState(syncBridgeUi)
-    bridge.onError((message) => {
+    unsubs.push(bridge.onState(syncBridgeUi))
+    unsubs.push(bridge.onTelemetry(onTelemetry))
+    unsubs.push(bridge.onFlightEvent((event) => {
+      appendFlightEvent(tele.timeline, event, eventSession)
+    }))
+    unsubs.push(bridge.onError((message) => {
       bridgeFooter.textContent = `Bridge error: ${message}`
-    })
+    }))
   }
+
+  raf = requestAnimationFrame(tick)
 
   window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
     if (prefs.appearance.theme === 'system') applyTheme('system')
   })
 
   window.addEventListener('beforeunload', () => {
+    cancelAnimationFrame(raf)
+    for (const unsub of unsubs) unsub()
     void controller.flushPendingSave()
   })
 }
