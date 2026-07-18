@@ -10,6 +10,16 @@ It relies on real-time telemetry provided through **SimConnect**.
 
 Other simulators, including previous Microsoft Flight Simulator versions, are **not supported** and compatibility should not be assumed.
 
+> ## Aircraft Compatibility
+>
+> The bridge is **aircraft-agnostic**.
+>
+> It uses standard Microsoft Flight Simulator SimConnect variables rather than aircraft-specific integrations. This means vibration effects work with virtually any aircraft that correctly exposes SimConnect data, regardless of the developer.
+>
+> Whether you fly default aircraft or third-party add-ons, the bridge automatically adapts its effects based on the aircraft type (jet, piston, turboprop, or helicopter) and the available flight data.
+>
+> No aircraft-specific profiles or plugins are required.
+
 Both interfaces share the exact same vibration core.
 Choose the interface that best fits your workflow: the Desktop Launcher for configuration and live telemetry, or the lightweight Classic CLI for VR, diagnostics and scripting.
 
@@ -57,6 +67,8 @@ Launcher preferences live under the Windows app data directory for identifier `c
 
 ## Project status
 
+- **March 23, 2026** — Initial private CLI prototype.
+- **July 17, 2026** — Development resumed for a public release, introducing the Desktop Launcher and numerous improvements.
 - Functional on the hardware listed below
 - First public / community release (`v0.1.0`)
 - Desktop Launcher and Classic CLI share the same vibration engine.
@@ -274,9 +286,13 @@ Experimental HID research scripts are not part of the public runtime and are not
 
 ## Credits
 
-[Ursa Minor FFB](https://github.com/rtroncoso/ursa-minor-ffb) by [rtroncoso](https://github.com/rtroncoso) — MIT-licensed research and tooling for WinWing **Ursa Minor** sidestick force-feedback / rumble via SimConnect.
+During the reverse engineering of WinWing Orion 2 vibration support, one issue remained unsolved: although valid HID vibration commands were being sent, the motors would not stay active reliably.
 
-This Orion 2 bridge targets **different hardware** (Throttle Base II + F-15EX grips, Joystick Base 2 + F-16 grip) and uses its own code and motor routing. Public research around continuous HID refresh for WinWing vibration motors informed the need for an ongoing output loop in this project. Thanks to the author for sharing that work.
+After many unsuccessful experiments, I studied the [Ursa Minor FFB](https://github.com/rtroncoso/ursa-minor-ffb) project by [rtroncoso](https://github.com/rtroncoso). While no code from that project was reused, it helped me understand the communication behavior required by WinWing devices, which ultimately led to the solution.
+
+Once that missing piece was understood, the Orion 2 implementation worked as expected.
+
+All Orion 2 support, vibration effects, SimConnect integration, Desktop Launcher, and application code were developed independently.
 
 ## Contributing
 

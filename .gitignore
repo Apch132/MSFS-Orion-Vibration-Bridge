@@ -5,7 +5,13 @@ node_modules/
 dist/
 apps/launcher/dist/
 apps/launcher/app-icon.png
-apps/launcher/src-tauri/binaries/*.exe
+
+# Executables / installers (GitHub Release assets only — never commit)
+*.exe
+*.msi
+*.msix
+*.appx
+*.dll
 
 # Tauri / Rust
 apps/launcher/src-tauri/target/
@@ -60,3 +66,5 @@ WWTHID.log
 SimLogic.log
 *.bak
 *.tmp
+*.temp
+~$*
