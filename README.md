@@ -2,13 +2,13 @@
 
 Unofficial Windows utility for driving vibration motors on supported WinWing Orion 2 controllers in Microsoft Flight Simulator using SimConnect telemetry.
 
-**Compatibility**
+## Compatibility
 
-This project is developed, tested and officially supported **only with Microsoft Flight Simulator 2024**.
+This project is developed and tested on Microsoft Flight Simulator 2024.
 
-It relies on real-time telemetry provided through **SimConnect**.
+It relies on real-time telemetry provided through SimConnect.
 
-Other simulators, including previous Microsoft Flight Simulator versions, are **not supported** and compatibility should not be assumed.
+Compatibility with other simulators, including previous Microsoft Flight Simulator versions, has not been tested and therefore cannot be guaranteed.
 
 > ## Aircraft Compatibility
 >
