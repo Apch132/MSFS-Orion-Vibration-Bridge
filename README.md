@@ -160,7 +160,7 @@ Aircraft that do not expose a given SimVar will simply not produce that effect.
 **Requirements**
 
 - Windows
-- [Node.js](https://nodejs.org/) **20 or newer** (build uses `@yao-pkg/pkg` target `node22-win-x64`)
+- [Node.js](https://nodejs.org/) **22.23.4 or newer within Node 22** (October 2026 security fixes; build uses enhanced SEA with `@yao-pkg/pkg`)
 - MSFS 2024 installed (for SimConnect)
 - Compatible WinWing hardware connected
 
@@ -177,7 +177,7 @@ npm run build
 npm run build:cli
 ```
 
-Output: `dist/WinwingVibration.exe` (not committed to git). The packaged runtime is Node 22.
+Output: `dist/WinwingVibration.exe` (not committed to git). Builds use enhanced SEA with official Node 22. The build **fails closed** if the packaged executable does not report Node 22.23.4 or newer on the Node 22 line. Existing EXEs and installers are **not** patched by updating GitHub; rebuild and redistribute them on Windows. Because the build verifies the output by running it, run Windows-targeted builds on Windows.
 
 Build the launcher bridge-host sidecar (autonomous; no system Node.js at runtime):
 
@@ -309,3 +309,10 @@ Pull requests that change feel curves should explain the motivation; please keep
 ## License
 
 [MIT](./LICENSE) — Copyright (c) 2026 Apch132
+
+
+## October 2026 Node.js security update
+
+Both the CLI and the Tauri launcher sidecar are packaged with `@yao-pkg/pkg --sea` to use stock Node.js rather than a patched pkg base binary. The source build requires Node 22.23.4+ (major 22 only). Each generated Windows `.exe` supports `--runtime-version`; the build checks that the **embedded** runtime is patched and fails if verification is not possible. The sidecar is checked before being copied into Tauri's `binaries` folder.
+
+**Windows release checklist:** install Node 22.23.4+ and dependencies using `npm ci`; run `npm test`, `npm run build:cli`, `npm run build:bridge-host`, `npm run typecheck:launcher`, `npm run build:launcher`, then test the packaged sidecar with `npm run smoke:bridge-host` during a live MSFS 2024 flight with supported hardware. Replace previously distributed CLI executables and NSIS installers. Merely updating Node on end-user machines does not change runtimes embedded in existing executables.

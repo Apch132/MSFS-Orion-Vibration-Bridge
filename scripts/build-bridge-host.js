@@ -10,6 +10,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const ROOT = path.resolve(__dirname, '..')
+require('./assert-secure-node')
 const TARGET_TRIPLE = 'x86_64-pc-windows-msvc'
 const SIDECAR_NAME = 'bridge-host'
 const STAGING = path.join(ROOT, 'dist', 'sidecars', `${SIDECAR_NAME}.exe`)
@@ -54,6 +55,7 @@ function runPkg() {
   const args = [
     ...argsPrefix,
     ENTRY,
+    '--sea',
     '--targets',
     'node22-win-x64',
     '--output',
@@ -79,6 +81,8 @@ function copySidecar() {
   }
   ensureDir(path.dirname(DIST_NAMED))
   ensureDir(TAURI_BINARIES)
+  const check = spawnSync(process.execPath, [path.join(__dirname, 'verify-packaged-runtime.js'), STAGING], { cwd: ROOT, stdio: 'inherit' })
+  if (check.status !== 0) process.exit(check.status || 1)
   fs.copyFileSync(STAGING, DIST_NAMED)
   fs.copyFileSync(STAGING, TAURI_NAMED)
   const size = fs.statSync(TAURI_NAMED).size

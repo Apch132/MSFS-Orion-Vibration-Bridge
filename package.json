@@ -7,7 +7,7 @@
   "license": "MIT",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=22.23.4 <23"
   },
   "scripts": {
     "start": "node vibration.js",
@@ -17,7 +17,7 @@
     "test:bridge": "node --test test/bridge.test.js test/bridge-host-protocol.test.js test/telemetry.test.js test/intensity-hid.test.js",
     "dev:launcher": "npm run build:bridge-host && npm --prefix apps/launcher run tauri:dev",
     "build": "npm run build:cli",
-    "build:cli": "npx @yao-pkg/pkg . --target node22-win-x64 --output dist/WinwingVibration.exe",
+    "build:cli": "node scripts/assert-secure-node.js && npx --no-install @yao-pkg/pkg . --sea --target node22-win-x64 --output dist/WinwingVibration.exe && node scripts/verify-packaged-runtime.js dist/WinwingVibration.exe",
     "build:bridge-host": "node scripts/build-bridge-host.js",
     "ensure:bridge-host": "node scripts/ensure-bridge-host.js",
     "smoke:bridge-host": "node scripts/smoke-bridge-host.js",
@@ -35,7 +35,8 @@
       "node_modules/node-hid/prebuilds/**/*",
       "node_modules/node-simconnect/**/*.node",
       "lib/**/*"
-    ]
+    ],
+    "sea": true
   },
   "dependencies": {
     "node-hid": "^3.1.0",
