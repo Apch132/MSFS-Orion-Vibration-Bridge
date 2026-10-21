@@ -8,7 +8,7 @@ if (!file || !fs.existsSync(file)) {
 }
 const result = spawnSync(file, ['--runtime-version'], {encoding:'utf8', timeout:15000, windowsHide:true})
 const version = (result.stdout || '').trim()
-const match = /^v(\d+)\\.(\d+)\\.(\d+)$/.exec(version)
+const match = /^v(\d+)\.(\d+)\.(\d+)$/.exec(version)
 if(result.error || result.status !== 0 || !match) {
   console.error('[security] Cannot verify embedded Node.js version:', result.error?.message || result.stderr || version)
   process.exit(1)
