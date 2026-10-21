@@ -7,6 +7,11 @@
 
 'use strict'
 
+if (process.argv.includes('--runtime-version')) {
+  process.stdout.write(process.version + '\n')
+  process.exit(0)
+}
+
 const {
   createBridge,
   getDefaultBridgePreferences,
